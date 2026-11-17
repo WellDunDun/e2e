@@ -124,7 +124,7 @@ export function web(options: WebOptions = {}): EngineHandle<WebFixtures> {
     perform: (ref, action, operation) => surface.perform(ref, action, operation),
     // A browser honors every action kind of the contract; `actions.ts` dispatches each.
     actions: LOCATOR_ACTION_KINDS,
-    filePayloads: true,
+    ...(LOCATOR_ACTION_KINDS.includes('setInputFilePayloads') ? { filePayloads: true } : {}),
     // Playwright holds each modifier for the click.
     tapModifiers: true,
     // A page takes every pointer action of the contract at a bare point too.
