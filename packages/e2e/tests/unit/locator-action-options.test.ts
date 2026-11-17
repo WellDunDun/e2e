@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest';
-import { resolveExpression, type KeyModifier, type LocatorAction, type LocatorExpression } from '@e2e-dev/core/lib/engine/index';
+import { resolveExpression, type KeyModifier, type LocatorAction, type LocatorExpression, LOCATOR_ACTION_KINDS } from '@e2e-dev/core/lib/engine/index';
 import type { ActionOptions, Locator, Screen } from '@e2e-dev/core/lib/types';
 import { invalid } from '../helpers/invalid.ts';
 import { screenOver } from '../helpers/screen-over.ts';
@@ -194,11 +194,24 @@ describe('locator action options', () => {
     await screen.getByLabel('Agree').setInputFiles([file, { ...file, name: 'empty.bin', buffer: Buffer.alloc(0) }]);
     const encoded = { name: file.name, mimeType: file.mimeType, buffer: 'AID/' };
     expect(actions).toEqual([
-      { kind: 'setInputFiles', files: [encoded] },
-      { kind: 'setInputFiles', files: [encoded, { ...encoded, name: 'empty.bin', buffer: '' }] },
+      { kind: 'setInputFilePayloads', files: [encoded] },
+      { kind: 'setInputFilePayloads', files: [encoded, { ...encoded, name: 'empty.bin', buffer: '' }] },
     ]);
     expect(JSON.parse(JSON.stringify(actions))).toEqual(actions);
     expect(JSON.stringify(steps.all())).not.toContain('AID/');
+  });
+
+  it.each([{ actions: ['setInputFiles'] as const }, { actions: LOCATOR_ACTION_KINDS }])('rejects payload uploads without opt-in even when an older engine imports the shared list', async ({ actions }) => {
+    const locate = vi.fn(async () => [BOX]);
+    const perform = vi.fn(async () => undefined);
+    const { screen } = screenOver({ locate, perform, actions, observe: () => snapshot(NODES), timeoutMs: 1_000 });
+    await expect(screen.getByLabel('Agree').setInputFiles({
+      name: 'a.txt', mimeType: 'text/plain', buffer: Buffer.from('data'),
+    })).rejects.toMatchObject({ code: 'UNSUPPORTED_CAPABILITY' });
+    expect(locate).not.toHaveBeenCalled();
+    expect(perform).not.toHaveBeenCalled();
+    await screen.getByLabel('Agree').setInputFiles('a.txt');
+    expect(perform).toHaveBeenCalledWith(expect.anything(), { kind: 'setInputFiles', paths: ['a.txt'] }, expect.anything());
   });
 
   it.each([

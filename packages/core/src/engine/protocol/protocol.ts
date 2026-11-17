@@ -116,6 +116,8 @@ export interface EngineManifest {
   readonly pointerActions?: readonly PointerActionKind[];
   /** See `Engine.tapModifiers`. */
   readonly tapModifiers?: boolean;
+  /** See `Engine.filePayloads`. */
+  readonly filePayloads?: boolean;
 }
 
 /** What a connection serves: a run's provisioning, a worker, or `e2e doctor`'s checks. */

@@ -97,6 +97,21 @@ describe('engine protocol', () => {
     expect(Object.keys(remote.session ?? {}).toSorted()).toEqual(['open', 'reset']);
   });
 
+  it('negotiates payload uploads and preserves their bytes over JSON-RPC', async () => {
+    const perform = vi.fn(async () => undefined);
+    const { remote } = overLoopback(toy({ actions: LOCATOR_ACTION_KINDS, filePayloads: true, perform }));
+    expect(remote.filePayloads).toBe(true);
+    expect(remote.actions).toContain('setInputFilePayloads');
+    await remote.init!(initInfo());
+    const action = { kind: 'setInputFilePayloads', files: [{ name: 'binary.bin', mimeType: 'application/octet-stream', buffer: 'AID/' }] } as const;
+    await remote.perform!({ id: 'root', revision: '1' }, action, operation());
+    expect(perform).toHaveBeenCalledWith(expect.anything(), action, expect.anything());
+    await remote.dispose!(cleanup);
+    const legacy = overLoopback(toy({ actions: LOCATOR_ACTION_KINDS, perform }));
+    expect(legacy.remote.filePayloads).toBeUndefined();
+    expect(legacy.remote.actions).not.toContain('setInputFilePayloads');
+  });
+
   it('carries a snapshot with its pixels byte for byte', async () => {
     const data = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0, 255, 7]);
     const { remote } = overLoopback(

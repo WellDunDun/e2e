@@ -116,7 +116,7 @@ describe.each(KINDS)('through the %s target', (kind) => {
       { name: 'résumé.bin', mimeType: 'application/octet-stream', buffer: Buffer.from([0, 128, 255]).toString('base64') },
       { name: 'empty.txt', mimeType: 'text/plain', buffer: '' },
     ];
-    await dispatchLocatorAction(await targetOf(kind, selector), { kind: 'setInputFiles', files },
+    await dispatchLocatorAction(await targetOf(kind, selector), { kind: 'setInputFilePayloads', files },
       { timeoutMs: 2000, signal: new AbortController().signal }, () => { throw new Error('no second target'); });
     expect(await page.locator('#avatar').evaluate(async (node: HTMLInputElement) => Promise.all(
       Array.from(node.files ?? [], async (picked) => ({

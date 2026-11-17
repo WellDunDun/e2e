@@ -4,6 +4,7 @@
   "spiVersion": 1,
   "platform": "android",
   "workers": 1,
+  "filePayloads": true,
   "methods": [
     "engine/observe",
     "engine/readStyle",
@@ -23,6 +24,6 @@
     "lifecycle/startAttempt",
     "lifecycle/endAttempt"
   ],
-  "actions": ["tap", "doubleTap", "longPress", "fill", "clear", "press", "check", "uncheck", "focus", "scrollIntoView", "dragTo", "swipe"],
+  "actions": ["tap", "doubleTap", "longPress", "fill", "clear", "press", "check", "uncheck", "focus", "scrollIntoView", "setInputFiles", "setInputFilePayloads", "dragTo", "swipe"],
   "pointerActions": ["tap", "doubleTap", "longPress", "dragTo", "swipe", "swipeTo"]
 }

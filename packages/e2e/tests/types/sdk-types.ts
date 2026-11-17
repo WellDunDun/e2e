@@ -602,6 +602,9 @@ void (test.fail(false) satisfies void);
 test('gap', { fail: 'known gap' }, async () => {});
 // @ts-expect-error a group cannot expect failure; mark each test
 test.describe('gaps', { fail: true }, () => {});
+// Existing engines can keep reading paths after narrowing the original action kind.
+declare const pathUploadAction: Extract<import('../../src/engine/index.ts').LocatorAction, { kind: 'setInputFiles' }>;
+pathUploadAction.paths satisfies readonly string[];
 void screen.getByLabel('Receipt').setInputFiles({ name: 'receipt.txt', mimeType: 'text/plain', buffer: Buffer.from('receipt') });
 void screen.getByLabel('Receipt').setInputFiles([{ name: 'empty.txt', mimeType: 'text/plain', buffer: Buffer.alloc(0) }]);
 void screen.getByLabel('Receipt').setInputFiles(['fixtures/receipt.txt']);

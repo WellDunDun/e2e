@@ -238,6 +238,7 @@ class EngineClient {
         actions: manifest.actions,
         pointerActions: manifest.pointerActions,
         tapModifiers: manifest.tapModifiers,
+        filePayloads: manifest.filePayloads,
         secrets: this.#options.secrets,
         fixtures: this.#options.fixtures,
         validateApp: this.#options.validateApp,

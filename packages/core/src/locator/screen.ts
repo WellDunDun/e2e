@@ -544,7 +544,7 @@ class LocatorImpl extends ScreenImpl implements Locator {
       rejectUnknownOptions('setInputFiles payload', entry, ['name', 'mimeType', 'buffer']);
       return { name: entry['name'], mimeType: entry['mimeType'], buffer: entry['buffer'].toString('base64') };
     });
-    return this.perform('setInputFiles', { kind: 'setInputFiles', files: payloads }, options);
+    return this.perform('setInputFiles', { kind: 'setInputFilePayloads', files: payloads }, options);
   }
 
   dragTo(target: Locator, options?: ActionOptions): Promise<void> {

@@ -336,8 +336,11 @@ export async function dispatchLocatorAction(
       }
       return;
     }
-    case 'setInputFiles': {
-      const files = 'paths' in action ? [...action.paths] : action.files.map((file) => ({
+    case 'setInputFiles':
+      await uploadFiles(target, [...action.paths], operation);
+      return;
+    case 'setInputFilePayloads': {
+      const files = action.files.map((file) => ({
         ...file, buffer: Buffer.from(file.buffer, 'base64'),
       }));
       await uploadFiles(target, files, operation);

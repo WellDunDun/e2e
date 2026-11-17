@@ -293,7 +293,7 @@ export type LocatorAction =
   | { readonly kind: 'selectOption'; readonly value: SelectOption }
   | { readonly kind: 'setInputFiles'; readonly paths: readonly string[] }
   | {
-      readonly kind: 'setInputFiles';
+      readonly kind: 'setInputFilePayloads';
       /** In-memory files; `buffer` is base64 so the action survives JSON-RPC. */
       readonly files: readonly { readonly name: string; readonly mimeType: string; readonly buffer: string }[];
     }
@@ -323,6 +323,7 @@ export const LOCATOR_ACTION_KINDS = [
   'scrollIntoView',
   'selectOption',
   'setInputFiles',
+  'setInputFilePayloads',
   'dragTo',
   'swipe',
 ] as const satisfies readonly LocatorActionKind[];

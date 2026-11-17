@@ -875,7 +875,7 @@ Web only. A `FilePayload` has `name: string`, `mimeType: string`, and `buffer: B
 | Throws | When |
 | --- | --- |
 | `INVALID_ARGUMENT` | A blank path, an invalid payload, or a mixed array of paths and payloads. |
-| `UNSUPPORTED_CAPABILITY` | On a device, which has no file input. |
+| `UNSUPPORTED_CAPABILITY` | On a device, or for payloads on an engine that does not declare `setInputFilePayloads`. |
 | `ACTION_FAILED` | A button that opens no file chooser. |
 
 #### `dragTo`

@@ -91,6 +91,7 @@
           "scrollIntoView",
           "selectOption",
           "setInputFiles",
+          "setInputFilePayloads",
           "dragTo",
           "swipe"
         ]
@@ -114,6 +115,9 @@
       }
     },
     "tapModifiers": {
+      "type": "boolean"
+    },
+    "filePayloads": {
       "type": "boolean"
     }
   },
@@ -389,6 +393,35 @@
             }
           }
         }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "filePayloads": {
+            "const": true
+          }
+        },
+        "required": [
+          "filePayloads"
+        ]
+      },
+      "then": {
+        "properties": {
+          "methods": {
+            "contains": {
+              "const": "engine/perform"
+            }
+          },
+          "actions": {
+            "contains": {
+              "const": "setInputFilePayloads"
+            }
+          }
+        },
+        "required": [
+          "actions"
+        ]
       }
     }
   ]
