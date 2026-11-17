@@ -33,6 +33,8 @@ describe('checkout', { tags: ['billing'] }, () => {
 | --- | --- |
 | [`test`](#test) | `TestCase` |
 | [`test.skip`](#test-skip) | `TestCase \| void` |
+| [`test.skipIf`](#test-skipif) | `TestRegistrar` |
+| [`test.runIf`](#test-runif) | `TestRegistrar` |
 | [`test.fail`](#test-fail) | `TestCase \| void` |
 | [`test.only`](#test-only) | `TestCase` |
 | [`test.setup`](#test-setup) | `TestCase` |
@@ -126,6 +128,47 @@ test('switches organizations', { session: 'admin' }, async ({ app, agent }) => {
 | --- | --- |
 | `INVALID_ARGUMENT` | セットアップテスト内で呼び出された。他のテストがそのセッションに依存しているため、セットアップテストはスキップできません。 |
 | `COLLECTION_ERROR` | テスト本体の外での条件付きの形式。 |
+
+#### `test.skipIf`
+
+`test(title, fn)` と同様に 1 つのテストを登録する関数を返します。条件が truthy
+の場合、そのテストはスキップされます。
+
+```ts
+test.skipIf(process.platform === 'win32')('watches files', async ({ app }) => {});
+test.skipIf(process.env.CI)('opens the system dialog', async ({ app }) => {});
+```
+
+- 条件は呼び出し時、つまりファイルの収集中に 1 回だけ読み取られます。
+  `process.platform` や環境変数など、その時点でわかる値を使ってください。
+  実行時に判明する条件については、本体内で
+  [`test.skip(condition, reason)`](#test-skip) を呼び出します。
+- Vitest と同様に、truthy な値であればスキップされます。
+- スキップされたテストは `test(title, { skip: true }, fn)` と同じです。本体は
+  実行されず、その他のオプションは保持されます。
+- [`skip`](#skip) オプションは条件にかかわらずテストをスキップし、その理由の
+  文字列が報告される理由になります。
+- シリアルグループの外では、条件が falsy の場合、`test` と同じようにテストが
+  登録されます。
+- [`test`](#test) と同じ 2 つの形式を取り、同じフィクスチャを持ちます。拡張した
+  `test` でも同様です。
+
+| スロー | 条件 |
+| --- | --- |
+| `COLLECTION_ERROR` | 条件にかかわらず、シリアルグループ内で呼び出された。代わりにシリアルの `describe` に [`skip`](#skip) を設定してください。 |
+| `COLLECTION_ERROR` | 条件が Promise である。これは型エラーにもなります。呼び出しの前に await してください。 |
+
+#### `test.runIf`
+
+`test(title, fn)` と同様に 1 つのテストを登録する関数を返します。条件が falsy
+の場合、そのテストはスキップされます。
+
+```ts
+test.runIf(process.platform === 'linux')('reads inotify events', async ({ app }) => {});
+```
+
+`test.runIf(condition)` は `test.skipIf(!condition)` と同じです。
+[`test.skipIf`](#test-skipif) の内容はすべてそのまま当てはまります。
 
 #### `test.fail`
 
@@ -562,6 +605,7 @@ describe('checkout', { serial: true }, () => {
 | スロー | 条件 |
 | --- | --- |
 | `COLLECTION_ERROR` | メンバーが `retries`、`trace`、`video`、`session`、`platforms`、`requires`、`skip`、`only`、またはネストした `serial` を設定している。 |
+| `COLLECTION_ERROR` | メンバーが `test.skipIf` または `test.runIf` で登録されている。 |
 
 #### `sessions`
 
@@ -675,11 +719,15 @@ test('renames the workspace', async ({ workspace, screen }) => {
 ### `TestAPI`
 
 ```ts
-export interface TestAPI<Fixtures = TestFixtures> {
+/** The two call forms of `test`, shared with what `test.skipIf` and `test.runIf` return. */
+export interface TestRegistrar<Fixtures = TestFixtures> {
   /** Registers one test synchronously during module evaluation. */
   (title: string, fn: TestFn<Fixtures>): TestCase;
   /** Registers one configured test synchronously during module evaluation. */
   (title: string, options: TestOptions, fn: TestFn<Fixtures>): TestCase;
+}
+
+export interface TestAPI<Fixtures = TestFixtures> extends TestRegistrar<Fixtures> {
   /** Registers one skipped test. */
   skip(title: string, fn: TestFn<Fixtures>): TestCase;
   /**
@@ -693,6 +741,24 @@ export interface TestAPI<Fixtures = TestFixtures> {
    */
   skip(condition: boolean, reason?: string): void;
   skip(reason?: string): void;
+  /**
+   * Returns a function that registers one test, like `test(title, fn)`:
+   * skipped when `condition` is truthy, as if it had the `skip` option. The
+   * condition is read once, at this call, so it can only depend on what is
+   * known while the file is collected (`process.platform`, `process.env.CI`):
+   *
+   *   test.skipIf(process.platform === 'win32')('file watcher', async () => {});
+   *
+   * A `skip` option skips the test whatever the condition. A serial group
+   * rejects the call: set `skip` on the serial `describe` instead. A Promise
+   * condition also fails the call: await it first.
+   */
+  skipIf<Condition>(condition: SynchronousCondition<Condition>): TestRegistrar<Fixtures>;
+  /**
+   * Returns a function that registers one test, like `test(title, fn)`:
+   * skipped when `condition` is falsy, `test.skipIf(!condition)`.
+   */
+  runIf<Condition>(condition: SynchronousCondition<Condition>): TestRegistrar<Fixtures>;
   /** Registers one test that is expected to fail. */
   fail(title: string, fn: TestFn<Fixtures>): TestCase;
   /**
@@ -895,6 +961,11 @@ export type SuiteHookFn = (fixtures: SuiteFixtures) => void | Promise<void>;
 /** A `describe` body. An async body is a type error. */
 export type SynchronousBody<Result> = Extract<Result, PromiseLike<unknown>> extends never
   ? () => Result
+  : never;
+
+/** A `test.skipIf` or `test.runIf` condition. A Promise is a type error. */
+export type SynchronousCondition<Condition> = Extract<Condition, PromiseLike<unknown>> extends never
+  ? Condition
   : never;
 
 /** Opaque handle of a registered test. */

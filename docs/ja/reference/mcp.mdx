@@ -130,7 +130,7 @@ call {tool: "tap", args: {target: "n42"}, session: "<id>"}
 | `args` | object | いいえ | ツールの引数です。 |
 | `session` | string | 複数開いている間 | セッション ID です。 |
 
-- 引数はまずツールのクローズドなスキーマに対して検証されます。型が間違っている場合や、ツールが宣言していない引数がある場合は `INVALID_ARGUMENT` になり、何も実行されません。
+- 引数はまずツールのクローズドなスキーマに対して検証されます。型が間違っている場合や、引数を宣言しているツールが宣言していない引数がある場合は `INVALID_ARGUMENT` になり、何も実行されません。`back` と `dismiss_keyboard` は引数を取らず、渡された引数を破棄して実行されます。
 - 失敗したアクションはエラー結果になりますが、再観測した画面は含まれます。結果の先頭にはツール、そのターゲット、コードが示されます:
   `navigate file:///etc/passwd failed: POLICY_DENIED: forbidden URL scheme: file:`。
 - プロジェクトツールは、`execute` が文字列を返す場合も含め、AI SDK の `toModelOutput` レンダラーに従います。レンダリングされた `error-text` と `error-json` の出力は MCP のエラー結果（`isError: true`）になります。コーディングエージェントは、失敗したツール呼び出しと成功したものを区別できます。
