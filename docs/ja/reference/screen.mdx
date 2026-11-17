@@ -1,0 +1,1233 @@
+---
+title: screen と Locator
+description: クエリ、絞り込み、アクション、読み取り。
+"og:image": "https://e2e.com/docs/images/og/reference/screen.png?v=1b21c45d37"
+"twitter:image": "https://e2e.com/docs/images/og/reference/screen.png?v=1b21c45d37"
+---
+
+`screen` フィクスチャはロケーターを作成します。`Locator` はクエリを保持し、アクション、読み取り、アサーションが実行されたときにそれを解決します。すべてのクエリはロケーター上でも実行でき、その場合はロケーターのサブツリーにスコープされます。
+
+```ts title="tests/invoices.e2e.ts"
+import { expect, test } from 'e2e';
+
+test('void an invoice', async ({ app, screen }) => {
+  await app.open('/invoices');
+  const row = screen.getByRole('listitem').filter({ hasText: 'Invoice 42' });
+  await row.getByRole('button', 'Void').tap();
+  await expect(row.getByText('Voided')).toBeVisible();
+});
+```
+
+## リファレンス
+
+### クエリ
+
+| メソッド | 戻り値 |
+| --- | --- |
+| [`getByRole`](#getbyrole) | `Locator` |
+| [`getByLabel`](#getbylabel) | `Locator` |
+| [`getByPlaceholder`](#getbyplaceholder) | `Locator` |
+| [`getByText`](#getbytext) | `Locator` |
+| [`getByDisplayValue`](#getbydisplayvalue) | `Locator` |
+| [`getByTestId`](#getbytestid) | `Locator` |
+
+すべてのクエリは `Locator` を同期的に返し、その時点では何の処理も行いません。クエリが受け付けないオプションキー（`{ nam: 'Save' }`）を渡すと、受け付けるキーを列挙した `INVALID_LOCATOR` がスローされます。
+
+`getByRole` の名前、`getByLabel`、`getByPlaceholder`、`getByText`、`getByDisplayValue` に渡した文字列は、空白を正規化したうえでテキスト全体に対して大文字と小文字を区別して一致します。`getByRole('button', 'Save')` は `Save changes` に一致しません。`{ exact: false }` を指定すると大文字と小文字を区別しない部分一致になり、`RegExp` は記述したとおりに一致します。
+
+すべてのクエリは `visible: true` を受け付けます。[非表示の重複](#hidden-duplicates)を参照してください。
+
+#### `getByRole`
+
+[ロール](#types)でノードを照合し、必要に応じてアクセシブルネームと状態で絞り込みます。
+
+```ts
+/** Creates a lazy role query. An alias such as `img` is rewritten to its role. */
+getByRole(role: Role | RoleAlias, options?: RoleOptions): Locator;
+/** Creates a lazy role query narrowed to an accessible name: `getByRole('button', 'Sign in')`. */
+getByRole(role: Role | RoleAlias, name: TextMatch, options?: Omit<RoleOptions, 'name'>): Locator;
+```
+
+```ts
+screen.getByRole('button', 'Save');
+screen.getByRole('button', 'Save', { exact: false });
+screen.getByRole('button', { name: 'Save', disabled: true }); // the object form
+screen.getByRole('heading', /welcome/i, { level: 1 });
+```
+
+アクセシブルネームは 2 番目の引数として文字列または `RegExp` で渡し、その他のオプションはその後に続けます。オブジェクト形式の `{ name: 'Save' }` も同じクエリです。オプションは [`RoleOptions`](#types) です。
+
+<Note>
+ロールクエリは、アクセシビリティツリーから隠されたノード（レンダリングされないノードや `aria-hidden` 配下のノード）には決して一致しません。その他の種類のクエリでは、`visible: true` を指定するとレンダリングされるノードだけが残ります。これは `toBeVisible()` と同じチェックなので、描画はされている `aria-hidden` のノードは表示されているものとして扱われます。[非表示の重複](#hidden-duplicates)を参照してください。
+</Note>
+
+##### `img` エイリアス
+
+`img` はロールではなくエイリアスです（[`RoleAlias`](#types)）。`getByRole('img', { name })` は `getByRole('image', { name })` と同じクエリを作成するので、Playwright から移植したテストは書き方をそのまま維持できます。Web では、`image` は代替テキストを持つ `<img>` と、`role="img"` を持つすべての要素を対象とします。`<img alt="">` は装飾であり何にも一致しませんが、`title`、`tabindex`、またはグローバル ARIA 属性を持つ場合は `image` になります。
+
+##### Web でのロール
+
+Web エンジンは、HTML-AAM と同じ方法で HTML からロールを導出します。
+
+- `<progress>` は `progressbar`、`<meter>` は `meter`、`<hr>` は `separator` です。
+- `<fieldset>` と `<details>` は `group` です。
+- `<input type="number">` は `spinbutton` です。`<input type="file">` は、Chrome と Playwright の解釈に合わせて `button` です。
+- `<select size="3">` は、`multiple` のものと同様に `listbox` です。`<datalist>` を指定した `<input list>` は `combobox` です。
+- `role="grid"` テーブルの `<td>` は `gridcell` です。
+- `<thead>` と `<tbody>` は `rowgroup` です。
+- `<th scope="row">` は `rowheader` です。テキストまたは子要素を持つデータセルの隣にある scope なしの `<th>` も `rowheader` になります。ヘッダーだけの行は `columnheader` のままです。1 行だけのテーブルにある scope なしの単独のヘッダーはヘッダーロールを持ちませんが、明示的な `scope="col"` または `scope="colgroup"` があれば `columnheader` のままです。
+- `<figure>` は `figure`、`<article>` は `article` です。
+- `<header>` と `<footer>` が `banner` と `contentinfo` になるのは、セクショニングコンテンツやセクショニングロール（`article`、`complementary`、`main`、`navigation`、`region`）を持つ要素の外にある場合だけです。
+- `<form>` と `<section>` が `form` と `region` になるのは、`aria-label`、`aria-labelledby`、または `title` を持つ場合だけです。
+- `<menu>` は `list` です。`menu` になるのは `role="menu"` だけです。
+- `role="presentation"` と `role="none"` は、フォーカス可能な要素や `aria-label` などのグローバル ARIA 属性を持つ要素では、`getByRole` の解釈に合わせて無視されます。`<button role="none">` は `button` のままです。
+
+名前も同じルールに従います。
+
+- `<legend>`、`<figcaption>`、`<caption>` はそれぞれ fieldset、figure、table に名前を付けます。そのため、`toHaveAccessibleName` は `getByRole('group', { name })` が一致したものと同じ名前を読み取ります。
+- accname がコンテンツから名前を付けるロール（button、link、heading、tab、menu item、option、checkbox、radio、switch、cell、row header または column header、row、tree item、tooltip）は、カスタム要素のシャドウツリーを含む子孫から名前を得ます。そのため、`<div role="checkbox">` に対して `getByRole('checkbox', { name })` と `toHaveAccessibleName(name)` の結果は一致します。テキストや構造以外の独自のロールを持つ子孫（`status` バッジ、tree item の子の `group`、`img`）は、そのラベルまたは `title` だけを加えます。`Inbox <span role="status">3</span>` を含む tab の名前は `Inbox` です。
+- `value` を持たない `<input type="submit">` または `type="reset"` は、`Submit` または `Reset` と読み取られます。
+
+##### デバイスでのロール
+
+デバイスエンジンは、プラットフォームが持つ型をマッピングします。タブバーやセグメンテッドコントロールは `tablist`、プログレスインジケーターは `progressbar`、ステッパーは `spinbutton` になります。それ以外の型はそのまま保持されるため、`tooltip` や `figure` のようにネイティブウィジェットを持たないロールは、スマートフォンでは何にも一致しません。
+
+##### 編集ホスト
+
+`contenteditable` の編集ホスト（TipTap、ProseMirror、Lexical、Slate のエディターがレンダリングするルート）は `textbox` です。
+
+- その値は、レンダリングされたとおりのテキストです。フォーカスがある間、その `selection` は内部で選択されているテキストです。値はスペースと改行を保持するため、`toHaveValue` と `inputValue()` は `white-space: pre-wrap` のエディターを textarea と同じように読み取ります。
+- 空のエディターは `''` と読み取られます。これは `<p><br></p>` だけ、またはエディターが空行の埋め草に使うゼロ幅ノーブレークスペースだけを含むエディターです。この埋め草が値に含まれることはありません。
+- 名前は、その `aria-label`、`aria-placeholder`、またはエディターが描画する `data-placeholder` から付けられます。内部のブロックはコンテンツであり、テキストボックスではありません。
+- タグは関係ありません。`<article contenteditable>` は article ではなくエディターです。編集可能にされたネイティブコントロールや描画サーフェスは、それ自身のロールを保持します。
+- ブロックの `data-placeholder`（TipTap、ProseMirror）から付けられた名前は、描画されるヒントと同様に、エディターにコンテンツが入ると消えます。それ以降、ホストは名前のない `textbox` になります。ホスト自身の `aria-label`、`aria-labelledby`、`aria-placeholder`、または `data-placeholder`（Quill）から付けられた名前は残ります。
+
+`getByRole` は Playwright のロールセレクターを通じて解決されますが、このセレクターにはこのようなルールがありません。そのため、`getByRole` がエディターを見つけられるのはホストが `role="textbox"` を持つ場合だけです。`getByLabel` と `getByTestId` はどちらの場合でもエディターに到達できます。テストはプレースホルダーではなく、ラベルまたはテスト ID を基準にしてください。
+
+#### `getByLabel`
+
+```ts
+/** Creates a lazy accessible-label query. */
+getByLabel(text: TextMatch, options?: TextMatchOptions): Locator;
+```
+
+```ts
+await screen.getByLabel('Email').fill('ada@example.test');
+```
+
+#### `getByPlaceholder`
+
+```ts
+/** Creates a lazy placeholder query. */
+getByPlaceholder(text: TextMatch, options?: TextMatchOptions): Locator;
+```
+
+```ts
+await screen.getByPlaceholder('Search memory...').fill('launch');
+```
+
+#### `getByText`
+
+```ts
+/** Creates a lazy visible-text query. */
+getByText(text: TextMatch, options?: TextMatchOptions): Locator;
+```
+
+```ts
+screen.getByText('Welcome back', { exact: false });
+```
+
+##### 重複するテキスト
+
+`getByText` は一致する最も内側のノードを返すため、子のテキストを繰り返し含むコンテナは 1 回だけ数えられます。ブラウザはこれをネイティブに行います。デバイスでは、iOS が React Native の `Text` を、同じラベルを持つ `StaticText` の子を伴うホストビューとして報告するため、エンジンが同じルールを適用します。互いに包含関係にない 2 つの一致は、引き続き `LOCATOR_AMBIGUOUS` になります。
+
+#### `getByDisplayValue`
+
+表示されている値でコントロールを照合します。
+
+```ts
+/** Creates a lazy displayed-value query. */
+getByDisplayValue(value: TextMatch, options?: TextMatchOptions): Locator;
+```
+
+```ts
+await screen.getByDisplayValue('ada@example.test').clear();
+```
+
+<Note>
+Web エンジンでは、`getByDisplayValue` ロケーターを子クエリのスコープや `has` フィルターにすることはできません。どちらも `UNSUPPORTED_CAPABILITY` で失敗します。Playwright にはコントロールの現在の値を対象とするセレクターがないため、エンジンは候補を後から絞り込みます。
+</Note>
+
+#### `getByTestId`
+
+ノードの `testId` を照合します。
+
+```ts
+/** Creates a lazy test-id query: a string matches the whole id, case-sensitive; a RegExp tests it. An engine may also match an id without its platform's namespacing. */
+getByTestId(id: TextMatch, options?: { visible?: boolean }): Locator;
+```
+
+```ts
+screen.getByTestId('todo-3');
+screen.getByTestId(/total-budgeted$/);
+```
+
+- Web では、`testId` はエンジンのテスト ID 属性（`web({ testIdAttribute })`、デフォルトは `data-testid`）の値です。
+- デバイスでは、アクセシビリティ識別子またはリソース ID です。名前空間については、モバイルエンジンの [Android リソース ID](/reference/mobile#capabilities) を参照してください。
+- 指定できるオプションは `visible` だけです。
+
+#### 非表示の重複
+
+すべてのクエリは `visible: true` を受け付けます。これを指定すると、「一致はちょうど 1 つ」のルールが適用される前に、プラットフォームが非表示と報告したノードが除外されます。フレームワークは、閉じたドロワーや非アクティブなタブパネルなど、コンテンツの非表示のコピーをドキュメント内に保持していることがよくあり、`visible` を指定しないと両方のコピーが一致します。
+
+```ts
+await browser.reload();
+// Two "No memories yet" nodes exist for a moment; one is display:none.
+await expect(screen.getByText('No memories yet', { visible: true })).toBeVisible();
+await screen.getByPlaceholder('Search memory...', { visible: true }).fill('launch');
+await screen.getByTestId('memory-list', { visible: true }).getByRole('listitem').first().tap();
+```
+
+`visible` は、`toBeVisible()`、`isVisible()`、`waitFor()` と同じ可視性チェックを使います。つまり、Playwright の解釈でレンダリングされるものです。
+
+- 非表示になるもの：`display: none`、`visibility: hidden`、サイズのないボックス、閉じた `<details>` の本文、`content-visibility: hidden` 配下のコンテンツ。
+- 非表示にならないもの：`aria-hidden`。これでマークされた装飾用のスピナーも描画はされるため、それに対する `toBeHidden()` はスピナーが消えるまで待機します。
+- 非表示の親の下で `visibility: visible` を設定した子は表示されます。
+- Web では、`visibility: hidden` を持つ `display: contents` 要素の直下にあるテキストは非表示です。Playwright はこれを表示されているとみなします。
+- Web では、非表示の `<iframe>` 内のものは、クロスオリジンのフレームも含めてすべて非表示です。
+- スコープ、`filter`、`first`、`last`、`nth` と組み合わせて使えます。`getByText('Save', { visible: true }).first()` は最初の表示されている一致です。
+
+テストを CSS に依存させる `browser.locator('p:visible')` よりも、こちらを使ってください。
+
+### 絞り込み
+
+| メソッド | 戻り値 |
+| --- | --- |
+| [`filter`](#filter) | `Locator` |
+| [`or`](#or) | `Locator` |
+| [`first`](#first) | `Locator` |
+| [`last`](#last) | `Locator` |
+| [`nth`](#nth) | `Locator` |
+
+絞り込みは、アプリにクエリを実行せずに新しいロケーターを返します。
+
+#### `filter`
+
+```ts
+/** Adds deterministic locator filters. */
+filter(options: { hasText?: TextMatch; hasNotText?: TextMatch; has?: Locator; hasNot?: Locator }): Locator;
+```
+
+```ts
+const row = screen.getByRole('listitem').filter({ hasText: 'Invoice 42', hasNotText: 'Paid' });
+await row.getByRole('button', 'Void').tap();
+```
+
+- 文字列を渡した `hasText` は、一致したノードとその子孫に対する、大文字と小文字を区別しない部分一致です。完全一致するクエリのテキストとは異なります。より厳密にしたい場合は `RegExp` を渡してください。
+- `hasNotText` は、サブツリーのテキストが一致するものを除外します。部分一致や `RegExp` のルールは同じです。
+- `has` は、サブツリーが内側のロケーターを解決できる一致を残します。
+- `hasNot` は、サブツリーが内側のロケーターを解決できる一致を除外します。スコープのルールは `has` と同じです。
+
+| スローされるエラー | 条件 |
+| --- | --- |
+| `INVALID_LOCATOR` | `hasText`、`hasNotText`、`has`、`hasNot` のいずれも指定されていない。 |
+| `INVALID_LOCATOR` | それ以外のキーがある（これらと併用した場合も含む）。ここでは `visible` はフィルターではありません。 |
+| `INVALID_LOCATOR` | `has` または `hasNot` がランナーのロケーターではない、または別のターゲットの screen で作成された。 |
+
+#### `or`
+
+```ts
+/** Matches either locator, preserving document order without duplicate nodes. */
+or(other: Locator): Locator;
+```
+
+`a.or(b)` は、どちらかの分岐に一致したノードをドキュメント順に 1 回ずつ一致させます。厳密さは維持されます。両方が異なるノードに一致した場合、アクションは `LOCATOR_AMBIGUOUS` をスローします。どちらでもよい場合は `first()` を追加してください。両方のロケーターは同じ screen と同じ試行から作成されている必要があります。Web では、両方のフレームセレクターチェーンがリテラルとして同一である必要があり、表示値の分岐は組み合わせられません。
+
+| スローされるエラー | 条件 |
+| --- | --- |
+| `INVALID_LOCATOR` | `other` がランナーのロケーターではない、または別の screen や試行に属している。 |
+| `UNSUPPORTED_CAPABILITY` | Web の分岐のフレームセレクターチェーンが異なる、または分岐が表示値クエリである。 |
+
+#### `first`
+
+```ts
+/** Selects the first current match. */
+first(): Locator;
+```
+
+```ts
+await screen.getByRole('listitem').first().tap();
+```
+
+#### `last`
+
+```ts
+/** Selects the last current match. */
+last(): Locator;
+```
+
+```ts
+await screen.getByRole('listitem').last().tap();
+```
+
+#### `nth`
+
+```ts
+/** Selects one zero-based current match. */
+nth(index: number): Locator;
+```
+
+```ts
+await screen.getByRole('row').nth(2).getByRole('checkbox').check();
+```
+
+| スローされるエラー | 条件 |
+| --- | --- |
+| `INVALID_LOCATOR` | 負または整数でないインデックス。 |
+
+### screen のアクション
+
+| メソッド | 戻り値 |
+| --- | --- |
+| [`screen.tapAt`](#screen-tapat) | `Promise<void>` |
+| [`screen.doubleTapAt`](#screen-doubletapat) | `Promise<void>` |
+| [`screen.swipe`](#screen-swipe) | `Promise<void>` |
+| [`screen.scrollUntilVisible`](#screen-scrolluntilvisible) | `Promise<void>` |
+
+`tapAt`、`doubleTapAt`、`swipe` はビューポートに対して動作します。
+
+#### `screen.tapAt`
+
+キャンバス上のピンや、ツリーに含まれないコントロールに使います。
+
+```ts
+/** Taps a viewport point, with no node behind it. */
+tapAt(point: Point, options?: ActionOptions): Promise<void>;
+```
+
+```ts
+const map = (await screen.getByRole('image', 'Map').boundingBox())!;
+await screen.tapAt({ x: map.x + 360, y: map.y + 70 });
+```
+
+- 座標は CSS ピクセルで、`boundingBox()` が報告するのと同じ座標空間です。
+- 何も解決せず、何も待機しません。タップがどこに当たるかはページが決めます。
+- `config.actionTimeout` を使います。
+- 座標はレイアウトに応じて動くため、ツリーにコントロールが含まれる場合はロケーターを使ってください。ノード内の座標を指定したい場合は、`tap({ position })` がノードのボックスを読み取ってくれます。
+
+| スローされるエラー | 条件 |
+| --- | --- |
+| `INVALID_ARGUMENT` | 負または有限でない座標。 |
+| `UNSUPPORTED_CAPABILITY` | エンジンのポインターアクションに `tap` が含まれていない。 |
+
+<Note>
+`tapAt` はスコープされません。ロケーター上で呼び出しても、ビューポートの座標をタップします。
+</Note>
+
+#### `screen.doubleTapAt`
+
+ツリーにターゲットが含まれない場合に、ビューポートの座標をダブルタップするために使います。
+
+```ts
+/** Double-taps a viewport point, with no node behind it. */
+doubleTapAt(point: Point, options?: ActionOptions): Promise<void>;
+```
+
+```ts
+await screen.doubleTapAt({ x: 120, y: 240 }, { timeout: 1_000 });
+```
+
+- `boundingBox()` と同じ単位のビューポート座標を使います。
+- ジェスチャーを何が受け取るかは、ページまたはデバイスが決めます。Web では、プライマリボタンのダブルクリックを送信します。
+- デバイスでは、ノードに対する `doubleTap()` と同様に、その座標に 2 回のプレスを送信します。iOS でのタイミングについては、[デバイスの既知の制限](/mobile#known-device-limitations)を参照してください。
+- デフォルトでは `config.actionTimeout` を使います。
+
+| スローされるエラー | 条件 |
+| --- | --- |
+| `INVALID_ARGUMENT` | 負または有限でない座標、または不明なオプション。 |
+| `UNSUPPORTED_CAPABILITY` | エンジンのポインターアクションに `doubleTap` が含まれていない。 |
+
+<Note>
+`doubleTapAt` はスコープされません。ロケーター上で呼び出しても、ビューポートの座標をダブルタップします。
+</Note>
+
+#### `screen.swipe`
+
+```ts
+/** Performs a viewport-level swipe: in a direction, or along a path from one point to another. */
+swipe(options: SwipeOptions | SwipePathOptions): Promise<void>;
+```
+
+```ts
+await screen.swipe({ direction: 'up', momentum: 'fast' });
+
+const row = (await screen.getByText('Design review').boundingBox())!;
+await screen.swipe({
+  from: { x: row.x + row.width - 10, y: row.y + row.height / 2 },
+  to: { x: row.x + 10, y: row.y + row.height / 2 },
+  duration: 300,
+});
+```
+
+`{ direction, momentum? }` は画面上のスクロールジェスチャーです。
+
+- `direction` は指の向きではなく、コンテンツがスクロールする向きです。`'down'` は下にあるものを表示します。
+- `momentum` はフリックの強さで、デフォルトは `'none'` です。`'none'` はサーフェスの半分だけの単純なドラッグ、`'slow'` は短いフリック、`'fast'` は長いフリックです。それぞれがどこまで進むかはエンジンが決めます。
+
+`{ from, to, duration? }` は、ビューポート上の 2 点間の経路に沿ったスワイプです。デバイスではタッチスワイプ、ドキュメントプラットフォームではポインタードラッグになります。行のアクションを表示する、シートを閉じる、カードを列の間でドラッグする、といった用途に使います。
+
+- `duration` はジェスチャーにかかる時間で、16 から 10000 ms までの整数です。省略するとエンジンのデフォルトになります。
+
+`config.actionTimeout` を使い、`timeout` オプションは受け付けません。
+
+| スローされるエラー | 条件 |
+| --- | --- |
+| `ACTION_FAILED` | ジェスチャーが拒否された。 |
+| `INVALID_ARGUMENT` | 2 つの形式の混在、範囲外の duration、平面外の座標、または `timeout` キー。 |
+| `UNSUPPORTED_CAPABILITY` | エンジンのアクションに `swipe` が含まれていない（direction の場合）、またはポインターアクションに `swipeTo` が含まれていない（経路の場合）。 |
+
+#### `screen.scrollUntilVisible`
+
+```ts
+/**
+ * Scrolls until a locator resolves visibly or times out: the viewport on
+ * `screen`, the node itself on a locator. `momentum` is the stride of each
+ * step, `slow` unless told otherwise.
+ */
+scrollUntilVisible(
+  target: Locator,
+  options?: { direction?: ScrollDirection; momentum?: Momentum; timeout?: number },
+): Promise<void>;
+```
+
+```ts
+await screen.scrollUntilVisible(screen.getByRole('button', 'Accept'));
+await screen.getByTestId('feed').scrollUntilVisible(row);
+```
+
+| オプション | 型 | デフォルト |
+| --- | --- | --- |
+| `target` | `Locator` | - |
+| `options.direction` | `ScrollDirection` | `'down'` |
+| `options.momentum` | `Momentum` | `'slow'` |
+| `options.timeout` | `number` | `30000` |
+
+- `momentum` は [`screen.swipe`](#screen-swipe) の定義と同じです。1 ステップが長いほど速くなりますが、仮想化リストのように、ターゲットが見えないままサーフェスを通り過ぎてしまわないようにする必要があります。
+- `timeout` は `config.actionTimeout` ではなく、独自のデフォルトを持ちます。各スワイプを含め、スクロール全体の上限になります。
+- ロケーター上で呼び出すと、各ステップはそのノードをスワイプします。そのため、それ自体がスクロールコンテナであるフィードやテーブルも、先にポインターをホバーさせることなくページ送りされます。
+- 非表示でない最初の一致で停止します。デバイスでは、ソフトウェアキーボードの下にあるノードは非表示なので、スクロールが続きます（[モバイルでの可視性](/reference/mobile#visibility)）。
+
+| スローされるエラー | 条件 |
+| --- | --- |
+| `INVALID_LOCATOR` | `target` がランナーのロケーターではない、または別のターゲットの screen で作成された。 |
+| `INVALID_ARGUMENT` | 受け付けないオプション。 |
+| `LOCATOR_NOT_FOUND` | 先に期限が切れた（途中で打ち切られたスワイプを含む）。 |
+
+### screen の読み取り
+
+| メソッド | 戻り値 |
+| --- | --- |
+| [`screen.tree`](#screen-tree) | `Promise<string>` |
+| [`screen.debug`](#screen-debug) | `Promise<void>` |
+
+どちらも待機せずに画面全体を 1 回読み取り、すべてのエンジンで動作します。ステップとして実行されます。ロケーターにはこれらのメソッドはなく、フレームで呼び出すと `INVALID_ARGUMENT` がスローされます。
+
+#### `screen.tree`
+
+エージェントが読み取るとおりの画面を返します。ロケーターを書くときに使います。
+
+```ts
+/**
+ * Reads the whole screen once, without waiting, as the agent reads it: one
+ * node per line, `#id role "name" text="…" [states]`, children indented,
+ * secrets redacted.
+ */
+tree(options?: ActionOptions): Promise<string>;
+```
+
+```text
+#n29 textbox "New todo"
+#n30 button "Add"
+ #n35 listitem "Milk Delete Milk" testid="todo"
+  #n36 checkbox "Milk" [checked]
+```
+
+- `config.actionTimeout` を使います。
+- テキストの形式とサイズの上限は、トレースの[失敗時の画面](/debugging#traces)と同じです。
+
+| スローされるエラー | 条件 |
+| --- | --- |
+| `INVALID_ARGUMENT` | フレームで呼び出された、または受け付けないオプションが指定された。 |
+
+#### `screen.debug`
+
+[`screen.tree()`](#screen-tree) をテストの[コンソール出力](/debugging#console-output)に出力します。
+
+```ts
+/** Prints `tree()` to the test's output. */
+debug(options?: ActionOptions): Promise<void>;
+```
+
+```ts
+await screen.debug();
+```
+
+### Locator のアクション
+
+| メソッド | 戻り値 |
+| --- | --- |
+| [`tap`](#tap) | `Promise<void>` |
+| [`click`](#tap) | `Promise<void>` |
+| [`doubleTap`](#doubletap) | `Promise<void>` |
+| [`dblclick`](#doubletap) | `Promise<void>` |
+| [`secondaryTap`](#secondarytap) | `Promise<void>` |
+| [`longPress`](#longpress) | `Promise<void>` |
+| [`fill`](#fill) | `Promise<void>` |
+| [`pressSequentially`](#presssequentially) | `Promise<void>` |
+| [`clear`](#clear) | `Promise<void>` |
+| [`press`](#press) | `Promise<void>` |
+| [`check`](#check) | `Promise<void>` |
+| [`uncheck`](#uncheck) | `Promise<void>` |
+| [`selectOption`](#selectoption) | `Promise<void>` |
+| [`focus`](#focus) | `Promise<void>` |
+| [`hover`](#hover) | `Promise<void>` |
+| [`setInputFiles`](#setinputfiles) | `Promise<void>` |
+| [`dragTo`](#dragto) | `Promise<void>` |
+| [`scrollIntoView`](#scrollintoview) | `Promise<void>` |
+| [`swipe`](#swipe) | `Promise<void>` |
+
+各アクションは 1 つのノードを解決し、操作可能になるまで待機して、1 つの操作を実行します。タイムアウトは [`config.actionTimeout`](/reference/config#actiontimeout) で、どのアクションも `{ timeout }` を受け付けてこれを上書きできます。`0` を指定すると、テストのタイムアウト（`afterEach` では `cleanupTimeout`）まで待機します。アクションが受け付けるのは、シグネチャに記載されたオプションだけです。
+
+| スローされるエラー | 条件 |
+| --- | --- |
+| `UNSUPPORTED_CAPABILITY` | エンジンの `actions` にそのアクションの種類が含まれていない。エンジンに到達する前にスローされます。 |
+| `INVALID_ARGUMENT` | アクションが受け付けないオプションキー（Playwright の `trial`、`force`、`noWaitAfter` を含む）、または負、`NaN`、無限大の `timeout`。ノードが解決される前にスローされるため、コントロールには一切触れません。 |
+| `LOCATOR_NOT_FOUND` | タイムアウトまでに一致がなかった。 |
+| `LOCATOR_AMBIGUOUS` | 複数の一致があった。 |
+| `ACTION_FAILED` | アクションがすでに確定している可能性があります。アクションが繰り返されることはありません。 |
+
+#### `tap`
+
+```ts
+/** Taps exactly one matching actionable node; with `position`, taps that point of its box once it is in view, with no other actionability check. */
+tap(options?: TapOptions): Promise<void>;
+/** Alias of tap. */
+click(options?: TapOptions): Promise<void>;
+```
+
+```ts
+await screen.getByRole('button', 'Save').tap({ timeout: 10_000 });
+await screen.getByRole('image', 'Seat map').tap({ position: { x: 120, y: 48 } });
+await row.click({ modifiers: ['Shift'] });
+```
+
+オプションは [`TapOptions`](#types) です。
+
+- `modifiers`：ブラウザエンジンがこれらのキーを押したままにします。
+- `position`：ノードの左上隅からのオフセットで、ボーダーの内側を基準とする CSS ピクセルです。エンジンが `scrollIntoView` をサポートしている場合、ノードをビューにスクロールします。その後ノードのボックスを読み取り、その座標でポインターをディスパッチします。ジェスチャーの背後にノードがないため、プラットフォームのその他の操作可能性チェック（有効であること、覆われていないこと）は実行されません。
+
+| スローされるエラー | 条件 |
+| --- | --- |
+| `INVALID_ARGUMENT` | 不明または重複した修飾キー、または `position` と併用された `modifiers`。 |
+| `UNSUPPORTED_CAPABILITY` | `tapModifiers` を宣言していないエンジン（モバイルエンジンを含む）での `modifiers`。動作する前にスローされます。 |
+| `UNSUPPORTED_CAPABILITY` | `tap` ポインターアクションを持たないエンジンでの `position`。 |
+| `ACTION_FAILED` | ブラウザエンジンがビューに表示できないノードでの `position`。スクロールは可視性を待機します。その他のエンジンは、報告するとおりに失敗します。 |
+| `LOCATOR_NOT_FOUND` | 解決はされるものの、タイムアウトまでに表示されるボックスを持たないノードでの `position`。 |
+
+#### `doubleTap`
+
+```ts
+/** Double-taps exactly one matching actionable node. */
+doubleTap(options?: ClickOptions): Promise<void>;
+/** Alias of doubleTap. */
+dblclick(options?: ClickOptions): Promise<void>;
+```
+
+```ts
+await screen.getByRole('cell', 'Q3 budget').doubleTap();
+```
+
+`timeout` と `modifiers` を受け付け、ルールとエラーは [`tap`](#tap) と同じです。
+
+#### `secondaryTap`
+
+```ts
+/** Secondary-taps exactly one matching actionable node: a right click, a two-finger tap. */
+secondaryTap(options?: ClickOptions): Promise<void>;
+```
+
+```ts
+await screen.getByRole('row', /Invoice 42/).secondaryTap();
+```
+
+`timeout` と `modifiers` を受け付け、ルールとエラーは [`tap`](#tap) と同じです。
+
+#### `longPress`
+
+```ts
+/** Long-presses exactly one matching actionable node. */
+longPress(options?: LongPressOptions): Promise<void>;
+```
+
+```ts
+await screen.getByText('Design review').longPress({ duration: 800 });
+```
+
+- `duration` は押し続ける時間で、100 から 10000 ms までの整数です。それ以外は `INVALID_ARGUMENT` になります。
+- 指定しない場合はエンジンのデフォルトが適用されます。ブラウザエンジンでは 500 ms、モバイルエンジンでは 1 秒で、React Native の `Pressable` の `delayLongPress` を超える長さです。
+
+#### `fill`
+
+入力の現在の内容を置き換えます。
+
+```ts
+/** Fills exactly one input. Secret values are never logged. */
+fill(value: string | Secret, options?: ActionOptions): Promise<void>;
+```
+
+```ts
+await screen.getByLabel('Email').fill('ada@example.test');
+await screen.getByLabel('Password').fill(credentials.user('member').password);
+```
+
+`Secret` は呼び出しの直前にホスト上で解決され、ログ、レポート、モデルへの送信に含まれることはありません。
+
+<Note>
+`fill` は値を直接設定し、キーイベントを発生させません。`keydown` や `keyup` に接続されたオートコンプリート、入力に合わせて検索するボックス、マスク付き入力は、これに反応しません。そのような場合は [`pressSequentially`](#presssequentially) を使ってください。
+</Note>
+
+#### `pressSequentially`
+
+エンジンのキーボードを通じて入力し、現在の内容に追記します。
+
+```ts
+/**
+ * Focuses exactly one input and types `text` through the keyboard, one
+ * character at a time, so the app receives key events. A `Secret` is
+ * refused; it goes through `fill`.
+ */
+pressSequentially(text: string, options?: PressSequentiallyOptions): Promise<void>;
+```
+
+```ts
+await screen.getByLabel('City').pressSequentially('War', { delay: 50 });
+```
+
+- `delay` を指定すると、文字の間にその時間（ミリ秒）だけ待機し、各文字を個別のキーボード呼び出しで送信します。指定しない場合、テキスト全体を 1 回の呼び出しで送信します。
+- フォーカス、待機、キーストロークは 1 つのアクションの期限を共有します。待機は期限で打ち切られ、期限を過ぎて文字が送信されることはありません。
+- [キーボードの規約](/reference/engine#engine)に依存します。`type` は人が入力するのと同じようにテキストを届ける必要があり、プラットフォームにキーイベントがある場合はそれがアプリに届きます。
+- `fill` と同様に、ステップにはテキストではなくロケーターが記録されます。
+
+| スローされるエラー | 条件 |
+| --- | --- |
+| `ACTION_FAILED` | テキストの途中で期限が過ぎた。エラーには、入力された文字数が示されます。 |
+| `UNSUPPORTED_CAPABILITY` | エンジンが `focus` アクションまたは `keyboard` 機能を持たない。ノードが解決される前にスローされます。 |
+| `INVALID_ARGUMENT` | 実行時の `Secret`（コンパイル時には型エラー）。シークレットは fill で入力されるもので、キーストロークとして入力されることはありません。 |
+
+#### `clear`
+
+```ts
+/** Clears exactly one input. */
+clear(options?: ActionOptions): Promise<void>;
+```
+
+```ts
+await screen.getByLabel('Search').clear();
+```
+
+#### `press`
+
+```ts
+/** Sends one key to exactly one node. */
+press(key: string, options?: ActionOptions): Promise<void>;
+```
+
+```ts
+await screen.getByRole('textbox', 'Search').press('Enter');
+await screen.getByRole('textbox', 'Notes').press('ControlOrMeta+a');
+```
+
+キーは、[キーの文法](/reference/engine#keys)に記載されているとおり、0 個以上の修飾キーと 1 つのキーを `+` でつないだものです。`Shift++` は `+` を押します。
+
+| スローされるエラー | 条件 |
+| --- | --- |
+| `UNSUPPORTED_CAPABILITY` | プラットフォームにないキー。 |
+
+#### `check`
+
+```ts
+/** Checks exactly one node. */
+check(options?: ActionOptions): Promise<void>;
+```
+
+```ts
+await screen.getByRole('checkbox', 'Remember me').check();
+```
+
+Web エンジンでは、自身のラベルの下に隠れているチェックボックスやラジオボタン（Element Plus など）は、そのラベルを通じてクリックされます。クリックが当たる位置の上にそれ以外のものがある場合は、引き続き `ACTION_FAILED` で失敗します。
+
+#### `uncheck`
+
+```ts
+/** Unchecks exactly one node. */
+uncheck(options?: ActionOptions): Promise<void>;
+```
+
+```ts
+await screen.getByRole('checkbox', 'Remember me').uncheck();
+```
+
+| スローされるエラー | 条件 |
+| --- | --- |
+| `ACTION_FAILED` | チェックされたネイティブのラジオボタン。これを解除できるのは、同じグループ内の別のラジオボタンだけです。 |
+
+#### `selectOption`
+
+```ts
+/** Selects one option from exactly one control. */
+selectOption(value: SelectOption, options?: ActionOptions): Promise<void>;
+```
+
+```ts
+await screen.getByLabel('Plan').selectOption('Pro');
+await screen.getByLabel('Plan').selectOption({ label: 'Pro' });
+await screen.getByLabel('Plan').selectOption({ value: 'pro' });
+```
+
+ラベル文字列、または `label`、`value`（フォームが送信する value 属性）、`index`（0 始まり）のいずれか 1 つだけを持つオブジェクトを渡します。
+
+| スローされるエラー | 条件 |
+| --- | --- |
+| `INVALID_ARGUMENT` | 1 回の呼び出しで複数のオプション（配列、またはこれらのキーを複数持つオブジェクト）。負または小数の `index` も含みます。エンジンが動作する前にスローされます。 |
+
+#### `focus`
+
+```ts
+/** Focuses exactly one node. */
+focus(options?: ActionOptions): Promise<void>;
+```
+
+```ts
+await screen.getByLabel('Email').focus();
+```
+
+#### `hover`
+
+```ts
+/** Hovers over exactly one matching actionable node. */
+hover(options?: ActionOptions): Promise<void>;
+```
+
+```ts
+await screen.getByRole('button', 'Account').hover();
+```
+
+#### `setInputFiles`
+
+```ts
+/** Sets the files of exactly one file input, or of a control that opens a file chooser; paths resolve from the project root, and an empty array clears the input. */
+setInputFiles(paths: string | readonly string[], options?: ActionOptions): Promise<void>;
+```
+
+```ts
+await screen.getByLabel('Receipt').setInputFiles('fixtures/receipt.pdf');
+await screen.getByLabel('Receipt').setInputFiles([]);
+```
+
+Web 専用です。空の配列を渡すと入力がクリアされ、`input` と `change` が発生します。ファイル選択ダイアログを開くボタンも受け付けます。
+
+| スローされるエラー | 条件 |
+| --- | --- |
+| `INVALID_ARGUMENT` | 空のパス。 |
+| `UNSUPPORTED_CAPABILITY` | デバイス上（ファイル入力がないため）。 |
+| `ACTION_FAILED` | ファイル選択ダイアログを開かないボタン。 |
+
+#### `dragTo`
+
+```ts
+/** Drags exactly one node to exactly one target. */
+dragTo(target: Locator, options?: ActionOptions): Promise<void>;
+```
+
+```ts
+await screen.getByText('Design review').dragTo(screen.getByRole('region', 'Done'));
+```
+
+| スローされるエラー | 条件 |
+| --- | --- |
+| `INVALID_LOCATOR` | `target` がランナーのロケーターではない、または別のターゲットの screen で作成された。 |
+
+#### `scrollIntoView`
+
+```ts
+/** Scrolls exactly one node into view. */
+scrollIntoView(options?: ActionOptions): Promise<void>;
+```
+
+```ts
+await screen.getByRole('contentinfo').scrollIntoView();
+```
+
+#### `swipe`
+
+```ts
+/** Performs a swipe scoped to exactly one node. */
+swipe(options: SwipeOptions & ActionOptions): Promise<void>;
+```
+
+```ts
+await screen.getByTestId('feed').swipe({ direction: 'down', momentum: 'slow' });
+```
+
+[`screen.swipe`](#screen-swipe) の定義どおりの `{ direction, momentum? }` に加え、`screen.swipe` が受け付けない `timeout` を受け付けます。`{ from, to }` 形式はありません。
+
+### Locator の読み取り
+
+| メソッド | 戻り値 |
+| --- | --- |
+| [`textContent`](#textcontent) | `Promise<string \| null>` |
+| [`inputValue`](#inputvalue) | `Promise<string>` |
+| [`getAttribute`](#getattribute) | `Promise<string \| null>` |
+| [`isVisible`](#isvisible) | `Promise<boolean>` |
+| [`isHidden`](#ishidden) | `Promise<boolean>` |
+| [`isEnabled`](#isenabled) | `Promise<boolean>` |
+| [`isDisabled`](#isdisabled) | `Promise<boolean>` |
+| [`isChecked`](#ischecked) | `Promise<boolean>` |
+| [`boundingBox`](#boundingbox) | `Promise<{ x, y, width, height } \| null>` |
+| [`count`](#count) | `Promise<number>` |
+| [`all`](#all) | `Promise<Locator[]>` |
+| [`allTextContents`](#alltextcontents) | `Promise<string[]>` |
+| [`waitFor`](#waitfor) | `Promise<void>` |
+
+読み取りは[一致のルール](#match-rules)に従います。`count`、`all`、`allTextContents` はスナップショットを取得し、待機しません。
+
+セキュアフィールドでは、`textContent`、`inputValue`、`getAttribute`、`allTextContents` は、対応する [`expect` マッチャー](/reference/expect#secure-fields)と同様に `POLICY_DENIED` をスローします。`isEnabled`、`isDisabled`、`isChecked`、`boundingBox` はセキュアフィールドでも使えます。
+
+#### `textContent`
+
+空白を単一のスペースにまとめた、ノードのレンダリングされたテキストを読み取ります。
+
+```ts
+/** Reads normalized text once a match exists, without retrying for a particular value. */
+textContent(): Promise<string | null>;
+```
+
+```ts
+const message = await screen.getByRole('alert').textContent();
+```
+
+- Web では、DOM の `textContent` ではなく `innerText` が読み取る内容です。CSS の `text-transform` が適用され、`display: none` の子孫は除外され、`<br>` はスペースとして読み取られます。
+- `display: none` のノードのように、それ自体がレンダリングされていないノードは、`innerText` と同様に DOM のテキストを読み取ります。
+
+#### `inputValue`
+
+```ts
+/** Reads the current input value. */
+inputValue(): Promise<string>;
+```
+
+```ts
+const email = await screen.getByLabel('Email').inputValue();
+```
+
+チェックボックスやラジオボタンでは、`inputValue()` と `toHaveValue` は、チェック状態に関係なく value 属性（ない場合は `on`）を読み取ります。状態を読み取るのは `isChecked()` です。
+
+| スローされるエラー | 条件 |
+| --- | --- |
+| `ACTION_FAILED` | 見出しやボタンなど、値を持たないノード。値のないフィールドは `""` と読み取られます。 |
+
+#### `getAttribute`
+
+```ts
+/** Reads one attribute. */
+getAttribute(name: string): Promise<string | null>;
+```
+
+```ts
+const href = await screen.getByRole('link', 'Docs').getAttribute('href');
+```
+
+#### `isVisible`
+
+```ts
+/** Reads current visibility. */
+isVisible(): Promise<boolean>;
+```
+
+```ts
+const open = await screen.getByRole('dialog').isVisible();
+```
+
+- 一致が 0 件の場合と、フレームがドキュメント内にない `frameLocator` の場合は `false` です。
+- `visible: true` と同じ可視性チェックを使います（[非表示の重複](#hidden-duplicates)を参照）。
+
+| スローされるエラー | 条件 |
+| --- | --- |
+| `LOCATOR_AMBIGUOUS` | 複数の一致があった。 |
+
+#### `isHidden`
+
+```ts
+/** Reads current hidden or absent state, the negation of `isVisible`. */
+isHidden(): Promise<boolean>;
+```
+
+```ts
+const gone = await screen.getByTestId('spinner').isHidden();
+```
+
+厳密さは `isVisible` と同じで、一致が 0 件の場合は `true` です。
+
+| スローされるエラー | 条件 |
+| --- | --- |
+| `LOCATOR_AMBIGUOUS` | 複数の一致があった。 |
+
+#### `isEnabled`
+
+```ts
+/** Reads current enabled state. */
+isEnabled(): Promise<boolean>;
+```
+
+```ts
+const ready = await screen.getByRole('button', 'Pay').isEnabled();
+```
+
+#### `isDisabled`
+
+```ts
+/** Reads current disabled state, the negation of `isEnabled`. */
+isDisabled(): Promise<boolean>;
+```
+
+```ts
+const blocked = await screen.getByRole('button', 'Pay').isDisabled();
+```
+
+厳密さは `isEnabled` と同じです。
+
+| スローされるエラー | 条件 |
+| --- | --- |
+| `LOCATOR_NOT_FOUND` | 一致が 0 件。 |
+| `LOCATOR_AMBIGUOUS` | 複数の一致があった。 |
+
+#### `isChecked`
+
+```ts
+/** Reads current checked state. */
+isChecked(): Promise<boolean>;
+```
+
+```ts
+const remembered = await screen.getByRole('checkbox', 'Remember me').isChecked();
+```
+
+`aria-checked` のない ARIA スイッチのように、状態が報告されていないチェック可能なロールは `false` と読み取られます。
+
+| スローされるエラー | 条件 |
+| --- | --- |
+| `ACTION_FAILED` | ボタンや見出しなど、チェック状態を持たないノード。 |
+
+#### `boundingBox`
+
+```ts
+/** Reads the current viewport-relative rectangle. */
+boundingBox(): Promise<{ x: number; y: number; width: number; height: number } | null>;
+```
+
+```ts
+const map = (await screen.getByRole('image', 'Map').boundingBox())!;
+```
+
+ボックスは CSS ピクセルで、デバイスではポイント（Android では物理ピクセル）です。ボックスをレイアウトしないノード（そのノードまたは祖先が `display: none`）では `null` です。`visibility: hidden` のノードはボックスを保持します。
+
+#### `count`
+
+```ts
+/** Counts current matches without auto-waiting. */
+count(): Promise<number>;
+```
+
+```ts
+const rows = await screen.getByRole('row').count();
+```
+
+一致が 0 件の場合と、フレームがドキュメント内にない `frameLocator` の場合は `0` です。
+
+#### `all`
+
+クエリを 1 回だけ解決するので、ループで各行に対してアクションを実行できます。
+
+```ts
+/** One `nth(i)` locator per current match, without auto-waiting; empty when nothing matches. */
+all(): Promise<Locator[]>;
+```
+
+```ts
+for (const row of await screen.getByRole('row').all()) {
+  await row.getByRole('checkbox').check();
+}
+```
+
+- 待機も「一致はちょうど 1 つ」の強制も行いません。一致が 0 件の場合は空の配列で、`count()` と同じスナップショットのルールです。フレームがドキュメント内にない `frameLocator` は、ここでは一致 0 件として扱われます。一方、アクションやアサーションはフレームをポーリングします。
+- `all()` が返す各ロケーターは、使用時に再解決されます。ループ中にリストが変化すると、後の `nth(i)` が別の行を指したり、何も指さなくなったりすることがあります。ループの後にリストに対するアサーションを続けてください。
+
+#### `allTextContents`
+
+```ts
+/** Reads the normalized text of every current match, without auto-waiting; empty when nothing matches. */
+allTextContents(): Promise<string[]>;
+```
+
+```ts
+expect(await screen.getByRole('listitem').allTextContents()).toEqual(['Alpha', 'Beta']);
+```
+
+- テキストは [`textContent`](#textcontent) と同じように読み取られます。
+- 待機も「一致はちょうど 1 つ」の強制も行いません。一致が 0 件の場合は、[`all`](#all) と同様に空の配列です。
+- テキストを確認するには、ループの代わりに [`toHaveText([...])`](/reference/expect#locator-matchers) を使ってください。
+
+#### `waitFor`
+
+```ts
+/**
+ * Waits for the requested locator state, `visible` by default: `attached`
+ * for one match, visible or not; `detached` for none; `hidden` for none or
+ * a hidden one.
+ */
+waitFor(options?: { state?: 'attached' | 'detached' | 'visible' | 'hidden'; timeout?: number }): Promise<void>;
+```
+
+```ts
+await screen.getByTestId('spinner').waitFor({ state: 'hidden' }); // default state: 'visible'
+```
+
+| 状態 | 待機する対象 |
+| --- | --- |
+| `'visible'`（デフォルト） | 表示されている 1 つの一致。 |
+| `'attached'` | 非表示か表示かを問わず 1 つの一致。 |
+| `'detached'` | 一致がないこと。 |
+| `'hidden'` | 非表示の一致、または一致がないこと。 |
+
+`timeout` のデフォルトは `config.actionTimeout` です。
+
+| スローされるエラー | 条件 |
+| --- | --- |
+| `LOCATOR_NOT_FOUND` | タイムアウトが切れた。 |
+| `LOCATOR_AMBIGUOUS` | 複数の一致があった（どの状態でも）。 |
+| `INVALID_ARGUMENT` | それ以外の状態、または `state` と `timeout` 以外のオプションキー。何かが解決される前にスローされます。 |
+
+## 一致のルール
+
+ほとんどの操作には、ちょうど 1 つの一致が必要です。読み取りは、アクションと同様に、アクションのタイムアウトまでその 1 つの一致をポーリングします。その後、値の変化を待たずに現在の値を返します。値を待機するには [`expect`](/reference/expect) を使ってください。
+
+エンジンが古くなったと報告したノード（ナビゲーションと競合した解決や、読み取り中にアプリが置き換えた一致）は、同じタイムアウト内で再解決されます。
+
+| 操作 | 一致が 0 件 | 一致が複数 |
+| --- | --- | --- |
+| アクション | タイムアウトまでポーリングし、その後 `LOCATOR_NOT_FOUND` | `LOCATOR_AMBIGUOUS` |
+| 読み取り | タイムアウトまでポーリングし、その後 `LOCATOR_NOT_FOUND` | `LOCATOR_AMBIGUOUS` |
+| `count()`、`all()`、`allTextContents()` | `0`、`[]`、`[]` | 件数、一致ごとに 1 つのロケーター、一致ごとに 1 つのテキスト |
+| `isVisible()`、`isHidden()` | `false`、`true` | `LOCATOR_AMBIGUOUS` |
+| アサーション | タイムアウトまでポーリングし、その後 `ASSERTION_FAILED` | `LOCATOR_AMBIGUOUS` |
+| ドキュメント内にないフレーム配下での上記のいずれか | `count()`、`all()`、`allTextContents()`、`isVisible()`、`isHidden()` では一致 0 件として扱われます。アクションと読み取りはタイムアウトまでフレームをポーリングし、その後 `LOCATOR_NOT_FOUND`、アサーションはその後 `ASSERTION_FAILED` | 複数のフレームが一致した場合は `LOCATOR_AMBIGUOUS` |
+
+## 型
+
+```ts
+/**
+ * The closed role vocabulary; an unsupported role is a type error. Every
+ * engine maps its platform's element types onto these names, so a role query
+ * reads the same against a browser and a device. A role the platform has no
+ * widget for matches nothing there; it is never a type error.
+ */
+export type Role =
+  | 'button'
+  | 'link'
+  | 'textbox'
+  | 'searchbox'
+  | 'combobox'
+  | 'listbox'
+  | 'option'
+  | 'checkbox'
+  | 'radio'
+  | 'radiogroup'
+  | 'switch'
+  | 'slider'
+  | 'spinbutton'
+  | 'progressbar'
+  | 'meter'
+  | 'image'
+  | 'heading'
+  | 'tab'
+  | 'tablist'
+  | 'tabpanel'
+  | 'menu'
+  | 'menubar'
+  | 'menuitem'
+  | 'menuitemcheckbox'
+  | 'menuitemradio'
+  | 'toolbar'
+  | 'tooltip'
+  | 'tree'
+  | 'treeitem'
+  | 'list'
+  | 'listitem'
+  | 'table'
+  | 'grid'
+  | 'row'
+  | 'rowgroup'
+  | 'rowheader'
+  | 'cell'
+  | 'gridcell'
+  | 'columnheader'
+  | 'separator'
+  | 'group'
+  | 'article'
+  | 'figure'
+  | 'form'
+  | 'status'
+  | 'alert'
+  | 'dialog'
+  | 'alertdialog'
+  | 'main'
+  | 'navigation'
+  | 'banner'
+  | 'contentinfo'
+  | 'complementary'
+  | 'region';
+
+/**
+ * Spellings `getByRole` accepts beside the vocabulary and rewrites to a `Role`
+ * before the query is built: `img` is the ARIA name of `image`. An alias never
+ * reaches an engine, the replay cache, or a report; a `Role` is what they see.
+ */
+export type RoleAlias = 'img';
+
+/** A string matches exactly; a RegExp uses its own source and flags. */
+export type TextMatch = string | RegExp;
+
+export interface TextMatchOptions {
+  /** Exact match, the default. `false` is case-insensitive substring matching; a RegExp ignores it. */
+  exact?: boolean;
+  /**
+   * When true, nodes the platform reports as hidden are excluded before the
+   * exactly-one rule is applied, so a visible node with a hidden twin (a
+   * prerendered copy kept after navigation, a closed drawer) still resolves.
+   * Omitted or false keeps every match, hidden ones included.
+   */
+  visible?: boolean;
+}
+
+/**
+ * Role query options. A role query never matches a node hidden from the
+ * accessibility tree, on every engine; `visible` (inherited) is the one knob
+ * that narrows the other query kinds, to the nodes `toBeVisible()` accepts.
+ */
+export interface RoleOptions extends TextMatchOptions {
+  /** Accessible name filter. */
+  name?: TextMatch;
+  /** Requires the checked state. */
+  checked?: boolean;
+  /** Requires the disabled state. */
+  disabled?: boolean;
+  /** Requires the selected state. */
+  selected?: boolean;
+  /** Requires the expanded state. */
+  expanded?: boolean;
+  /** Requires the pressed state of a toggle button. */
+  pressed?: boolean;
+  /** Requires a heading level, 1 through 6. */
+  level?: number;
+}
+
+export interface ActionOptions {
+  /** Deadline in milliseconds; defaults to `config.actionTimeout`. */
+  timeout?: number;
+}
+
+/** `longPress` options: the hold time in milliseconds, 100 through 10000, default the engine's own. */
+export interface LongPressOptions extends ActionOptions {
+  /** Hold time in milliseconds, 100 through 10000; unset, the engine's default. */
+  duration?: number;
+}
+
+/** `pressSequentially` options: an optional pause between characters. */
+export interface PressSequentiallyOptions extends ActionOptions {
+  /** Milliseconds to wait between characters; omitted types the whole text in one call. */
+  delay?: number;
+}
+
+export interface SwipeOptions {
+  /** Swipe direction. */
+  direction: ScrollDirection;
+  /** Fling strength; default `none`. The three values are defined under screen.swipe. */
+  momentum?: Momentum;
+  from?: never;
+  to?: never;
+  duration?: never;
+}
+
+/** A swipe along a path between two viewport points: a touch swipe on a device, a pointer drag on a document platform. */
+export interface SwipePathOptions {
+  /** Where the finger goes down. */
+  from: Point;
+  /** Where it lifts. */
+  to: Point;
+  /** Gesture duration, an integer from 16 through 10000 ms; omitted = the engine's default. */
+  duration?: number;
+  direction?: never;
+  momentum?: never;
+}
+
+/**
+ * A point in CSS pixels. For `screen.tapAt`, `screen.doubleTapAt`, and `screen.swipe` the origin is
+ * the viewport's top-left corner, the space `boundingBox()` reports in; for
+ * `tap({ position })` it is the node's own top-left corner, inside its
+ * border on a document platform.
+ */
+export type Point = ViewportPoint; // { x: number; y: number }
+
+/** `tap`, `click`, `doubleTap`, `dblclick`, and `secondaryTap` options: the action timeout and the keys held for the click. */
+export interface ClickOptions extends ActionOptions {
+  /**
+   * Keys held while the pointer clicks, as a Shift-click extends a selection:
+   * `Shift`, `Control`, `Alt`, `Meta`, or `ControlOrMeta` (Control on Windows
+   * and Linux, Meta on macOS). Needs an engine that declares `tapModifiers`,
+   * `UNSUPPORTED_CAPABILITY` otherwise.
+   */
+  modifiers?: readonly KeyModifier[];
+}
+
+/** A modifier key, for `modifiers` and the `press` key grammar. */
+export type KeyModifier = 'Shift' | 'Control' | 'Alt' | 'Meta' | 'ControlOrMeta';
+
+/** `tap` and `click` options. */
+export interface TapOptions extends ClickOptions {
+  /**
+   * Where to tap, relative to the node's top-left corner, inside its border
+   * on a document platform. Without it the platform picks a point of the
+   * node, usually its center, behind its own actionability checks; with it
+   * the pointer is dispatched at that point once the node is in view and has
+   * a box, which needs the engine's `tap` pointer action.
+   */
+  position?: Point;
+}
+
+/** One option of a select: its label (a bare string too), its `value` attribute, or its zero-based index. */
+export type SelectOption =
+  | string
+  | { label: string; value?: never; index?: never }
+  | { value: string; label?: never; index?: never }
+  | { index: number; label?: never; value?: never };
+
+/** A swipe or scroll direction. */
+export type ScrollDirection = 'up' | 'down' | 'left' | 'right';
+
+/** Fling strength of a swipe; defined under screen.swipe. */
+export type Momentum = 'none' | 'slow' | 'fast';
+```
+
+## 関連項目
+
+[`expect`](/reference/expect) はロケーターの状態を待機します。[`browser`](/reference/web) フィクスチャは CSS ロケーターとフレームを追加します。

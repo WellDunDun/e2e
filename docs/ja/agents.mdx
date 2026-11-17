@@ -1,0 +1,187 @@
+---
+title: エージェントとペルソナ
+description: 1 つのテストスイートに複数のエージェントを設定し、テストをそれらに固定し、1 つのフローを各ペルソナとして実行します。
+"og:image": "https://e2e.com/docs/images/og/agents.png?v=94dc88725f"
+"twitter:image": "https://e2e.com/docs/images/og/agents.png?v=94dc88725f"
+---
+
+import { Video } from '../snippets/video.jsx';
+
+エージェントは、`agents` 内の名前付きエントリで、独自のモデル、指示、ツールを持ちます。
+別のエージェントを選択しない限り、テストは `default` を使います。モデルを比較したり、
+1 つのフローを複数のペルソナとして実行したりするには、エージェントを追加で定義します。
+
+## 名前付きエージェントを定義する
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { gateway } from 'ai';
+
+const vocabulary = 'Plans are called tiers. Billing lives under Settings. "Approve" on an order refunds it.';
+
+export default {
+  targets: [{ engine: web(), app: { url: 'http://localhost:3000' } }],
+  agents: {
+    default: { model: gateway('openai/gpt-6-luna-fast'), context: vocabulary },
+    thorough: {
+      model: gateway('anthropic/claude-opus-5'),
+      system: 'Verify every claim on screen before concluding a step.',
+      context: vocabulary,
+    },
+    buyer: { model: gateway('openai/gpt-6-luna-fast'), system: 'You are a first-time buyer.', context: vocabulary },
+    admin: { model: gateway('openai/gpt-6-luna-fast'), system: 'You manage orders and approve refunds.', context: vocabulary },
+  },
+} satisfies E2EConfig;
+```
+
+エントリには、`model`、省略可能な [`judge`](/models#a-judge-of-its-own)、
+`system`、`context`、[ツール](/tools)、予算、`providerOptions` を指定します。
+`maxSteps` は 1 つのステップの操作数の上限、`maxModelCalls` はモデル呼び出し数の上限で、
+デフォルトは 25、最大は 100 です。
+[設定のリファレンス](/reference/config#agents)を参照してください。
+
+エントリは `default` から設定を継承しません。上の例のように共有の定数を使うなどして、
+各エントリに必要なモデルとコンテキストを指定してください。
+
+[カスタムエグゼキューター](/executors)は `executor` に指定します。モデル、ジャッジ、
+コンテキスト、予算は引き続き適用されます。エグゼキューターは独自のプロンプトとツールを持つため、
+`system` と `tools` は拒否されます。
+
+## 指示と語彙
+
+| | `system` | `context` |
+|---|---|---|
+| 答える問い | 操作するエージェントはどのように動くべきか | このアプリでは物事を何と呼ぶか |
+| 読む主体 | act のループのみ | すべてのモデル呼び出し: act のターンと、`assert`、`waitFor`、`extract` の背後にあるジャッジ |
+| 書く内容 | ペルソナ、慎重さ、完了前に確認すること、予期しないダイアログの扱い方 | 画面やメニューの名前、機能がある場所、フォームを送信するボタン、ドメインの用語 |
+| 設定する場所 | `agents.<name>.system` | `agents.<name>.context`（最大 16 KiB） |
+
+ジャッジは `system` を見ないため、「フォームが閉じたらステップは完了」といった指示で
+判定の基準を下げることはできません。目安として、このアプリをテストする誰にでも当てはまることは `context` に、
+このテスターがどのアプリでも当てはまることは `system` に書きます。
+
+テストやグループは、`agentContext` を使って独自の語彙を `context` に追加できます。
+シードデータや、ラベルを変える機能フラグなど、そのテストだけが知っている事実に使います。
+
+```ts title="tests/billing.e2e.ts"
+import { describe, test } from 'e2e';
+
+describe('billing', { agentContext: 'The seeded workspace is called "Acme Trial".' }, () => {
+  test('upgrades the tier', async ({ agent }) => { /* ... */ });
+});
+```
+
+`agentContext` に指示を書かないでください。ジャッジにも届いてしまいます。
+
+`e2e run` では、すべてのプロンプトに `Test: billing > upgrades the tier` のような
+テストのタイトルパスも含まれます。ジャッジもこれを読むため、テストには期待する判定ではなく、
+テストが対象とする内容に基づいた名前を付けてください。
+
+## 実行ごとにエージェントを選ぶ
+
+`--agent` は、エージェントを選択していないテストのエージェントを選びます。複数の名前を指定すると、
+各テストがエージェントごとに 1 回ずつ実行されます。
+
+<CodeGroup>
+```bash npm
+npx e2e run --agent thorough tests/checkout.e2e.ts
+npx e2e run --agent buyer,admin
+```
+
+```bash pnpm
+pnpm exec e2e run --agent thorough tests/checkout.e2e.ts
+pnpm exec e2e run --agent buyer,admin
+```
+
+```bash bun
+bunx e2e run --agent thorough tests/checkout.e2e.ts
+bunx e2e run --agent buyer,admin
+```
+</CodeGroup>
+
+## テストスイート内でエージェントを固定する
+
+テスト、describe ブロック、または 1 回の呼び出しでエージェントを選択できます。最も近い
+設定が優先されます。優先順位は、呼び出し、テスト、それを囲むグループ、実行の順です。
+
+```ts title="tests/checkout.e2e.ts"
+import { describe, test } from 'e2e';
+
+describe('checkout as a first-time buyer', { agent: 'buyer' }, () => {
+  test('pays for one item', async ({ app, agent }) => { /* ... */ });
+
+  describe('refunds', { agent: 'admin' }, () => {
+    test('refunds the order', async ({ agent }) => { /* ... */ });
+  });
+
+  test('reorders, and the admin approves', async ({ app, agent }) => {
+    await app.open('/orders');
+    await agent.act('reorder the most recent order');
+    // The admin's act call sees what the earlier steps of this test did.
+    await agent.act('approve the pending reorder', { agent: 'admin' });
+    await agent.assert('the reorder shows as approved');
+  });
+});
+```
+
+`--agent` は、テストが選択したエージェントを置き換えません。テストやグループに不明なエージェントを指定すると、
+収集中に失敗します。呼び出しに不明なエージェントを指定すると、
+`INVALID_ARGUMENT` が発生します。レポートには各ステップのエージェントが記録されます。
+
+## 1 つのフロー、複数のペルソナ
+
+<Video>
+  <video src="/images/personas.mp4" aria-label="それぞれ 1 つの言語を読むペルソナである 4 つのエージェントが、同じローカライズのテストを実行します。アラビア語の実行は、英語のまま残ったボタンで失敗します。" muted loop playsInline controls />
+
+  言語ごとに 1 つずつ、4 つのペルソナが同じローカライズのテストスイートを実行します。
+</Video>
+
+複数のエージェントを選択すると、同じテストがそれぞれのエージェントで 1 回ずつ実行されます。
+
+```ts title="tests/checkout.e2e.ts"
+import { describe, test } from 'e2e';
+
+describe('checkout', { agent: ['buyer', 'admin'] }, () => {
+  test('pays for one item', async ({ app, agent }) => { /* runs once per persona */ });
+  test('applies a promo code', async ({ app, agent }) => { /* ... */ });
+});
+```
+
+各エージェントには、それぞれ独自の結果とアーティファクトのディレクトリがあります。ターミナルと JUnit の
+テスト名には、`[admin]` のようにエージェントが含まれます。
+
+`--agent` は固定されたエージェントの中から選択するだけで、エージェントを追加することはありません。この例では、
+`--agent admin` は `admin` だけを実行します。`--agent thorough` はどちらにも一致しないため、
+両方とも実行されます。
+
+serial グループは、エージェントごとに 1 つの単位として実行され、そのメンバーはグループの固定設定を共有します。
+セットアップテストが固定できるエージェントは最大 1 つです。
+
+各エージェントは、名前とコンテキストをキーとして、独自の[リプレイキャッシュ](/cache)のエントリを記録します。
+`buyer` が `admin` のステップをリプレイすることはなく、
+`agentContext` が変わると記録し直されます。
+
+エージェントはサインイン済みのユーザーではありません。サインイン済みのペルソナにするには、別の describe ブロックで
+各エージェントを `session` と組み合わせます。
+[認証](/authentication#several-signed-in-users)を参照してください。
+
+## エージェントを自分のものにする
+
+ステップが失敗したり、呼び出し回数が多すぎたりする場合は、そのレポートを開くか、
+`--debug` を付けて実行してトランスクリプトを確認します。まずは画面上のラベルを使って指示を修正します。
+問題が複数のテストに影響する場合は、エージェントを修正します。
+語彙は `context` に、指示は `system` に入れ、テスト API を通じたカートへのシードデータ投入などの操作には
+[ツール](/tools)を使います。モデルや `providerOptions` を比較するには、
+同じテストを `--agent <name>` で実行します。
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="プロジェクトのツール" icon="wrench" href="/tools">
+    エージェントにテスト API やデバイスのツールキットを与えます。
+  </Card>
+  <Card title="カスタムエグゼキューター" icon="gears" href="/executors">
+    エージェントが操作を選んで実行する方法を変更します。
+  </Card>
+</CardGroup>

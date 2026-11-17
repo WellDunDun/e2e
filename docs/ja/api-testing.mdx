@@ -1,0 +1,79 @@
+---
+title: API
+description: fetch と値のマッチャーで API をチェックします。UI テストと同じファイル、同じ実行で行えます。
+"og:image": "https://e2e.com/docs/images/og/api-testing.png?v=bd427bf4fd"
+"twitter:image": "https://e2e.com/docs/images/og/api-testing.png?v=bd427bf4fd"
+---
+
+API テストは `fetch` で API を呼び出し、値のマッチャーでレスポンスをチェックします。
+API テストは UI テストと同じファイル、同じ実行の中に置けます。
+`app` だけを受け取るテストはモデルを呼び出しません。
+
+```ts title="tests/users-api.e2e.ts"
+import { test, expect } from 'e2e';
+import { z } from 'zod';
+
+const User = z.object({ id: z.number(), name: z.string() });
+
+test('GET /api/users returns the seeded users', async ({ app }) => {
+  const response = await fetch(`${app.baseUrl}/api/users`);
+  expect(response.status).toBe(200);
+  expect(response.headers.get('content-type')).toContain('application/json');
+  const users = expect(await response.json()).toMatchSchema(z.array(User));
+  expect(users).toHaveLength(3);
+  expect(users.map((user) => user.name)).toEqual(['Ada', 'Grace', expect.any(String)]);
+});
+```
+
+`toMatchSchema` は、Zod、Valibot、ArkType などの任意の [Standard Schema](/reference/expect#matching-a-schema) を受け取り、
+型付きの値を返します。アプリが API のパースに使っているスキーマを使えば、
+API がそのスキーマに合わなくなったときにテストが失敗します。
+
+## API の実行先
+
+`app.baseUrl` は、ターゲットの `app.url` から末尾のスラッシュを除いたものです。URL がポート `0` を
+宣言している場合は、実行時に選ばれたポートが入ります。そのため、1 つのファイルを、設定が起動する
+`app.command` に対しても、デプロイ済みのプレビューに対しても実行できます。
+
+API が応答した後に状態を書き込む場合は、
+[`expect.poll`](/reference/expect#polling-a-value) を使って、マッチャーが成功するまで
+繰り返し読み取ります。
+
+## サインイン済みのリクエスト
+
+サインイン済みのユーザーとして API を呼び出すには、各リクエストに
+`browser.cookies()` を付けて送る [フィクスチャ](/reference/test#your-own-fixtures) を書きます。
+この `test` を使うすべてのテストは `browser` を受け取るため、Web ターゲットが必要です。
+
+```ts title="tests/api.ts"
+import { test as base } from '@e2e-dev/web';
+
+export const test = base.extend<{ api: (path: string, init?: RequestInit) => Promise<Response> }>({
+  api: async ({ app, browser }, use) => {
+    await use(async (path, init) => {
+      const url = new URL(`${app.baseUrl}${path}`);
+      if (url.origin !== new URL(app.baseUrl).origin) throw new Error(`${url} is not on the app`);
+      const headers = new Headers(init?.headers);
+      headers.set('cookie', (await browser.cookies()).map((c) => `${c.name}=${c.value}`).join('; '));
+      return fetch(url, { ...init, headers });
+    });
+  },
+});
+```
+
+## ブラウザなしで実行する
+
+Web ターゲットでは、API テストでもブラウザコンテキストが開かれます。エンジンのない
+ターゲットは何も開かず、`app.baseUrl` も持たないため、URL は環境変数から
+読み取ります。エンジンを選択しなかった場合は、`e2e init` がその環境変数を設定します。
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="値のマッチャー" icon="circle-check" href="/reference/expect#value-matchers">
+    すべてのマッチャー、`toMatchSchema`、`expect.poll`。
+  </Card>
+  <Card title="認証" icon="key" href="/authentication">
+    1 回サインインし、そのセッションをすべてのテストで再利用します。
+  </Card>
+</CardGroup>

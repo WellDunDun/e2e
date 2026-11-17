@@ -1,0 +1,227 @@
+---
+title: Maestro から
+description: Maestro のフローを、ロケーター、アサーション、エージェントのゴールを使った TypeScript に移行します。
+"og:image": "https://e2e.com/docs/images/og/migrate/maestro.png?v=227549ed41"
+"twitter:image": "https://e2e.com/docs/images/og/migrate/maestro.png?v=227549ed41"
+---
+
+import { SetupPrompt } from '../../snippets/setup-prompt-card.jsx';
+
+export const migrationPrompt = `Migrate this project's Maestro flows to e2e, one flow at a time. Docs: \`https://e2e.com/docs/migrate/maestro.md\` and \`https://e2e.com/docs/mobile.md\`
+
+1. Read the migration guide above. It maps the Maestro config options and commands e2e has, and lists what e2e does not have yet with what to use today. The mobile guide covers devices and app builds.
+2. e2e tests are TypeScript. If the project has no \`package.json\`, as in a native iOS or Android project, create the test project in an \`e2e/\` folder beside the app.
+3. If the test project has no e2e config (\`e2e.config.ts\`, \`.mts\`, \`.js\`, or \`.mjs\`), run \`npx e2e init --yes --engine mobile\` (or the pnpm or bun equivalent) there. It writes a mobile config with one target for this machine's platform and an example test against the Settings app, and installs nothing yet. Rewrite \`tests/example.e2e.ts\` for your app or delete it.
+4. Read the e2e skill (\`npx e2e guide\` prints it, \`npx e2e guide <topic>\` prints a topic) and follow it for every step below.
+5. If you ran init, ask me which model to use for agent steps: a ChatGPT, GitHub Copilot, OpenCode Console, or SuperGrok subscription, an API key, or a local model. Configure it with its provider package. If it needs a sign-in, give me the \`npx e2e login\` command and wait until I confirm.
+6. Port the flows' \`appId\` and \`.maestro/config.yaml\` into the e2e config: one target per platform with \`mobile({ platform })\`, \`app: { bundleId }\` on each target, and tags as \`{ tags }\` on tests. Move passwords and tokens from \`env\` into \`credentials\` or \`secrets\`.
+7. Install dependencies, then run \`npx e2e doctor\` (e2e 0.23.0 or newer) and fix what it reports.
+8. List the flows and ask me which one to move first. Suggest one whose \`optional\` steps and \`runFlow: { when }\` branches often need updating.
+9. Rewrite that flow as a \`.e2e.ts\` test under \`tests/\` (e2e runs \`tests/**/*.e2e.ts\` by default), with one awaited call per command. Start it with \`app.open()\`, since nothing launches on its own. Follow the guide's "Rewrite selectors" and "What differs on purpose" sections: e2e matches the whole string, fails on several matches, and grants no permission the config does not name. Check "What e2e doesn't have yet" before you port a flow: for a command listed there, use its "Use today" workaround, or leave that flow in Maestro and tell me why.
+10. Keep the launch and the final assertions deterministic, with \`app.open()\` and locator assertions. Where a run of scripted taps breaks often, propose an \`agent.act\` goal for it instead.
+11. Build and install the app, run the new file with \`npx e2e run <file>\` on each platform target, and fix it until it passes. Keep the Maestro flow until I confirm it can go.
+12. Summarize which flows moved, which stayed in Maestro, and why.`;
+
+e2e は Maestro の YAML のフローを TypeScript のテストに置き換えます。各コマンドは
+await する呼び出しになり、多くの場合はロケーターに対する呼び出しです。あるいは 1 つのエージェントのゴールで複数のコマンドをまとめられます。
+フローを 1 つずつ移行する間、両方のランナーで同じシミュレーターやエミュレーターを使えます。
+
+<SetupPrompt>
+
+<Prompt description={migrationPrompt} children={migrationPrompt} actions={["copy", "cursor"]} />
+
+</SetupPrompt>
+
+複数のセッションにまたがる移行では、[`migrate-to-e2e` スキル](/coding-agents#migrate-an-existing-suite) が移行済みのものを進捗ファイルに記録し、各テストを廃止するまで古いテストスイートを実行可能なまま保ちます。
+
+## 設定を移植する
+
+<Note>[モバイルガイド](/mobile) でターゲットを、[クイックスタート](/quickstart) でモデルを設定してください。</Note>
+
+| Maestro | e2e |
+| --- | --- |
+| すべてのフローの先頭にある `appId` | ターゲットの `app: { bundleId: 'com.example.app' }`。`app.open()` が起動するアプリです |
+| フローごとに異なる `appId`、またはフローの途中での 2 つ目の `appId` | テスト内の `device.openApp(id)`、またはアプリごとに 1 つの設定 |
+| `--platform`, `--device` | `mobile({ platform: 'ios', device: 'iPhone 17' })`。プラットフォームごとに 1 つのターゲットです。`device` のリストはプールになります |
+| `.maestro/config.yaml` の `flows`, `'!helper.yaml'` | `tests: ['tests/**/*.e2e.ts', '!tests/helpers/**']` |
+| `tags`, `--include-tags`, `--exclude-tags` | テストまたはグループの `{ tags: [...] }`。CLI では `--tag`、`--exclude-tag` |
+| `env` と `${VAR}` | モジュールの定数と、ゴールの `params`: `agent.act('sign in as {email}', { params: { email } })` |
+| `MAESTRO_*` 変数 | 設定内の `process.env`。パスワードとトークンは `credentials` または `secrets` に置きます。[認証](/authentication) を参照 |
+| `--format junit` | `--reporter list,junit` は `.e2e/junit.xml` を書き出します |
+| `--format html` | `@e2e-dev/html-reporter` の `htmlReporter()` は `.e2e/report.html` を書き出します |
+| `--shards`, `--shard-split` | 1 台のマシンでは `device: [...]` と `workers`。複数のマシンにまたがる場合は `--shard <index/total>`。[シャーディング](/ci#sharding) を参照 |
+| `maestro record` | `npx e2e run --video`。試行ごとにデバイスの MP4 が 1 つ作られます。またはホスト型プロバイダー独自の録画 |
+| `maestro test -c` | `npx e2e run --watch` |
+| `maestro hierarchy` | テスト内の `await screen.debug()` は画面のツリーを出力します。`screen.tree()` はそれを返します |
+
+## フローを 1 つ書き直す
+
+`optional` のステップや `runFlow: { when }` の分岐を頻繁に更新する必要があるフローから
+始めます。
+
+```yaml title="Maestro"
+appId: com.example.app
+---
+- launchApp:
+    clearState: true
+- tapOn: "Get started"
+- tapOn:
+    id: "email"
+- inputText: "ada@example.test"
+- tapOn: "Continue"
+- assertVisible: "Check your inbox"
+- scrollUntilVisible:
+    element: "Resend"
+- assertVisible:
+    id: "resend"
+```
+
+```ts title="e2e"
+import { test } from '@e2e-dev/mobile';
+import { expect } from 'e2e';
+
+test('asks for the email', async ({ app, agent, screen }) => {
+  await app.clearState();
+  await agent.act('get started with the email {email}', { params: { email: 'ada@example.test' } });
+  await expect(screen.getByText('Check your inbox')).toBeVisible();
+  await screen.scrollUntilVisible(screen.getByTestId('resend'));
+  await expect(screen.getByTestId('resend')).toBeVisible();
+});
+```
+
+## 各コマンドを対応付ける
+
+`device` の呼び出しはデバイス上でのみ実行されるため、それを使うテストは
+`requires: ['device']` を宣言し、ほかのターゲットではスキップされます。シグネチャについては、
+[screen](/reference/screen)、[expect](/reference/expect)、
+[test](/reference/test)、[モバイルエンジン](/reference/mobile) を参照してください。
+
+<AccordionGroup>
+<Accordion title="アプリとデバイス">
+
+| Maestro | e2e |
+| --- | --- |
+| `launchApp` | `app.open()`。ターゲットのアプリを新たに起動します。何も自動では起動しません |
+| `clearState`, `launchApp: { clearState: true }` | `app.clearState()` |
+| `launchApp: { stopApp: false }` | `relaunch` なしの `device.openApp(id)` |
+| `launchApp: { arguments }` | ターゲットの `app.launchArguments`。マップではなく文字列のリストです。1 回の起動だけに使うには `device.openApp(app, { relaunch: true, launchArguments })` |
+| `launchApp: { permissions }`, `setPermissions` | ターゲットの `app.permissions`、または 1 回の起動だけに使う `device.openApp(app, { relaunch: true, permissions })`。`allow`、`deny`、`unset` の代わりに `grant`、`deny`、`reset` を使います。`app.open()` の前に `device.setPermission(name, state)` |
+| `stopApp`, `killApp` | 強制停止する `device.closeApp()`。アプリを停止して再度起動するには `app.restart()` |
+| `clearKeychain`, `openLink`, `setLocation`, `setAirplaneMode`, `setOrientation`, `setClipboard` | `device.openLink(url)` のように、`device` の同じメソッド。`clearKeychain` は iOS シミュレーターのみ、`setAirplaneMode(true)` は Android 11 以降です。`travel` には `device.setLocation` をループします |
+| `back`, `pressKey: Home`, `hideKeyboard`, `setDarkMode` | `app.back()`、`device.home()`、`device.dismissKeyboard()`、`device.setAppearance('dark')` |
+
+</Accordion>
+<Accordion title="タップ、入力、スワイプ">
+
+| Maestro | e2e |
+| --- | --- |
+| `tapOn: "Text"`, `tapOn: { id: x }` | `screen.getByText('Text').tap()`、`screen.getByTestId('x').tap()`。[セレクターを書き直す](#rewrite-selectors) を参照 |
+| `index: 2`, `containsDescendants`, `childOf` | `.nth(2)`、`.filter({ has: other })`、`parent.getByText('Text')` |
+| プラットフォーム固有のセレクター | agent-device のセレクター用語を使う `device.locator('role=text label="..."')` |
+| `tapOn: { point: "x,y" }` | `screen.tapAt({ x, y })`。ノード内では `.tap({ position: { x, y } })` |
+| `doubleTapOn`, `longPressOn` | `.doubleTap()`、`.longPress({ duration })` |
+| `tapOn` の後の `inputText`, `eraseText`, `pressKey: Enter` | フィールドのロケーターに対する `.fill('text')`、`.clear()`、`.press('Enter')` |
+| `inputRandomEmail`, `inputRandomText`, `faker` | `act` の params の値を `unique()` で囲むと、キャッシュは引き続きリプレイできます。それ以外には任意の npm の faker を使います |
+| `copyTextFrom`, `pasteText` | `await locator.textContent()` の後に `.fill(text)` |
+| `swipe: { direction: UP }`, `scroll` | `screen.swipe({ direction: 'down' })`。Maestro は指の方向を、e2e はコンテンツが動く方向を指定します |
+| `swipe: { start, end }`, `scrollUntilVisible` | ピクセル単位の `screen.swipe({ from, to })`、`screen.scrollUntilVisible(locator, { direction })` |
+
+</Accordion>
+<Accordion title="アサーションとフロー">
+
+| Maestro | e2e |
+| --- | --- |
+| `assertVisible`, `assertNotVisible`, `extendedWaitUntil` | `await expect(locator).toBeVisible({ timeout })`、`.toBeHidden()` |
+| `assertVisible: { enabled, checked, selected, focused }` | `.toBeVisible()` の後に `.toBeEnabled()`、`.toBeChecked()`、`.toBeSelected()`、または `.toBeFocused()` |
+| `assertTrue: ${...}` | `expect(value).toBe(true)`、または変化中の値には `expect.poll` |
+| `assertScreenshot: { path, thresholdPercentage }` | `await expect(screen).toHaveScreenshot(name, { maxDiffPixelRatio })`。[ビジュアル比較](/visual-testing) を参照 |
+| `takeScreenshot`, `startRecording`, `stopRecording` | `app.screenshot('label')`、[`app.startRecording()`、`app.stopRecording()`](/reference/app#startrecording) |
+| `assertWithAI`, `assertNoDefectsWithAI`, `extractTextWithAI` | `agent.assert('...', { vision: true })`、`agent.extract('...', { schema })` |
+| `runFlow: file.yaml`, `onFlowStart`, `onFlowComplete` | 関数または `test.extend` のフィクスチャ。`beforeEach`、`afterEach` |
+| `runFlow: { when: { visible } }` | `if (await locator.isVisible()) { ... }`。[セレクターを書き直す](#rewrite-selectors) を参照 |
+| `repeat`, `runScript`, `evalScript`, `${output.x}`, `http.get` | テスト内の TypeScript: ループ、変数、Node の `fetch`。[API](/api-testing) を参照 |
+
+</Accordion>
+</AccordionGroup>
+
+## セレクターを書き直す
+
+- Maestro はテキストと ID を、大文字と小文字を区別しない正規表現として読み取ります。
+  `getByText` と `getByTestId` は、大文字と小文字も含めて文字列全体に一致します。
+  `getByText(/^mute account$/i)` と書くか、テキストの部分文字列には `{ exact: false }` を使います。
+- Maestro は複数の一致のうち最初の要素をタップします。e2e は `LOCATOR_AMBIGUOUS` で失敗するため、
+  最初の一致を意図している場合は `.first()` を追加します。
+- `isVisible()` は `optional` と `runFlow: { when }` の代わりになります。画面を
+  1 回だけ読み取り、待機はしません。複数に一致すると失敗するため、非表示の同一要素が
+  存在しうる場合は `{ visible: true }` または `.first()` を追加します。
+- `below`、`above`、`leftOf`、`rightOf` には移植先がありません。
+  [未定](#not-yet) を参照してください。iOS では、`filter({ has })` とチェーンは
+  素の React Native の `View` には何も一致しません。[デバイスの既知の制限](/mobile#known-device-limitations) を参照してください。
+
+## e2e にまだないもの
+
+「予定あり」はロードマップに載っているもので、「未定」は時期が決まっていません。「予定なし」は
+意図的に含めていないものです。
+
+### 予定あり
+
+| Maestro | 現時点での回避策 |
+| --- | --- |
+| `permissions: { all }`、すべてを許可するデフォルト、`bluetooth` や `storage` などの名前 | 各権限を `app.permissions` に指定するか、`device.alert('accept')` でプロンプトを承認します |
+| `point: "50%,50%"`、`swipe` でのパーセント指定の `start` と `end` | 画面全体を占めるノードの `boundingBox()` からピクセルを計算します |
+| フィールドを指定しない `inputText` と `pressKey: Enter`, `eraseText: N`, `pressKey: backspace`, `tab` | フィールドのロケーターに対する `fill` または `press`。消去するには短くした `inputValue()` を `fill` します。Tab の代わりに次のフィールドをタップします |
+| `addMedia` | iOS シミュレーターでは、`app.open()` の前に `xcrun simctl addmedia`。Android は未検証です。[device フィクスチャ](/mobile#the-device-fixture) の「Photos for a picker test」を参照 |
+| コマンドの `label` | `-`。呼び出しが各ステップの名前になります |
+| `scrollUntilVisible: { centerElement, visibilityPercentage }` | 完全に対応するものはありません。解決後に `boundingBox()` を読み取り、ノードが中央からずれていれば `screen.swipe({ direction, momentum: 'slow' })` を使います |
+| 失敗時に添えるデバイスのログとクラッシュレポート | フィクスチャで収集する `adb logcat` または `xcrun simctl spawn <udid> log stream` |
+| ターミナルコマンドとしての `maestro hierarchy` | `screen.debug()` を呼び出す 1 行のテスト |
+| `--device-locale` | iOS では `app.launchArguments: ['-AppleLanguages', '(de)', '-AppleLocale', 'de_DE']`。[アプリを別の言語で実行する](/mobile#run-the-app-in-another-language) を参照。Android では、実行前にデバイスの言語を設定します |
+| Maestro Cloud | [ホスト型デバイスプロバイダー](/mobile#hosted-devices) を使った自前の [CI](/ci) |
+| `pressKey: lock`, `power`, `volume up`, `volume down` | [`unstable_raw`](/reference/mobile#unstable_raw) の `client.command.hardwareButton`: Android では電源と音量、iPhone 実機では音量 |
+| JUnit の `properties`, `--output` での JUnit のパス | タグまたはタイトルに含めた ID。実行後に `.e2e/junit.xml` をコピーします |
+| コマンドラインの `--device` | 設定内の `device: process.env.DEVICE` |
+
+### 未定
+
+| Maestro | 現時点での回避策 |
+| --- | --- |
+| `optional: true` | `if (await locator.isVisible())` または try/catch。レポートには警告は表示されません |
+| `executionOrder` | 各フローを関数として呼び出す 1 つの `describe(..., { serial: true })` |
+| `retry: { maxRetries, commands }` | try/catch を使った `for` ループ。値には `expect.poll`、テスト全体には `{ retries }` |
+| `killApp` による Android のプロセス終了 | `device.home()`、次に `adb shell am kill <package>`、次に `device.openApp(id)` |
+| `assertDarkMode`, `assertLightMode` | テーマが適用されたコントロールに対してアサーションするか、`toHaveScreenshot` を使います |
+| TV リモコンのキー | `-` |
+
+### 予定なし
+
+| Maestro | 代わりに使うもの |
+| --- | --- |
+| 正規表現としてのテキストと ID、最初の一致の採用 | `RegExp` と `.first()`。[セレクターを書き直す](#rewrite-selectors) を参照 |
+| `retryTapIfNoChange` | 結果をアサーションしてから、テスト内で再度タップします。やみくもに 2 回目のタップをすると、コントロールが 2 回発火することがあります |
+| `waitToSettleTimeoutMs` | アクションの後に独自の `timeout` を持つアサーションを置きます。そのアサーションが待機になります |
+| `toggleAirplaneMode`, `toggleDarkMode` | 目的の状態を設定します: `device.setAirplaneMode(true)`、`device.setAppearance('dark')` |
+| Maestro Studio | [`npx e2e mcp`](/mcp-server) を使うコーディングエージェント、または `npx e2e run --watch` や `--step` と組み合わせた `screen.debug()` |
+| `waitForAnimationToEnd` | アニメーションの終了時に表示されるものに対する `await expect(locator).toBeVisible()` |
+| `below`, `above`, `leftOf`, `rightOf` | `getByLabel`、テスト ID、共通のコンテナに対する `filter({ has })`、または `agent.act` のゴール |
+
+## 意図的に異なる点
+
+- Maestro はアプリを起動するときにすべての権限を付与します。e2e は指定しない限り
+  何も付与しないため、移植したフローでは Maestro では表示されなかったシステムのプロンプトに遭遇します。
+  各権限を [`app.permissions`](/mobile#launch-arguments-and-permissions) に指定してください。
+  Maestro の `allow`、`deny`、`unset` の代わりに `grant`、`deny`、`reset` を使います。
+- [`device.unstable_raw`](/reference/mobile#unstable_raw) を通じた呼び出しは
+  ステップではありません。レポート、トレース、エージェントのキャッシュ、秘匿化の対象外になります。
+- デバイスには `test.setup` も `{ session }` もありません。
+  [Web との違い](/mobile#what-differs-from-the-web) を参照してください。
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="モバイル" icon="mobile-screen" href="/mobile">
+    アプリとデバイスを設定します。
+  </Card>
+  <Card title="コアコンセプト" icon="pen-to-square" href="/core-concepts">
+    スクリプト化したセレクターの代わりに、ゴール、アサーション、ロケーターを使います。
+  </Card>
+</CardGroup>

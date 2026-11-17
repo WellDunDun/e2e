@@ -1,0 +1,210 @@
+---
+title: Expo Simulators
+sidebarTitle: Expo Simulators
+description: "@e2e-dev/eas の expoSimulators() デバイスプロバイダーを使って、Expo Simulators がホストする iOS シミュレーターと Android エミュレーターでモバイルのターゲットを実行します。"
+"og:image": "https://e2e.com/docs/images/og/integrations/eas.png?v=d8cb1fd2c5"
+"twitter:image": "https://e2e.com/docs/images/og/integrations/eas.png?v=d8cb1fd2c5"
+---
+
+`@e2e-dev/eas` の `expoSimulators()` は、
+[Expo Simulators](https://expo.dev/services/simulators)（ホスト型の iOS
+シミュレーターと Android エミュレーター）向けの
+[デバイスプロバイダー](/mobile#hosted-devices)です。エンジンは、Expo が各デバイスの横で動かす
+agent-device デーモンを通じて、それぞれのデバイスを操作します。Expo がホストするデバイスで e2e を実行するのに、
+Mac、Xcode、Android SDK は必要ありません。
+
+<Note>
+代わりに Expo の CI サービスで e2e を実行する場合は、[Expo Workflows](/ci/eas-workflows) を参照してください。
+</Note>
+
+## セットアップ
+
+Expo Simulators は限定公開中です。利用できるかどうかは
+`npx eas-cli@latest simulator:availability` を実行して確認します。そのうえでプロバイダーをインストールします。
+SDK は不要です。
+
+<CodeGroup>
+```bash npm
+npm install --save-dev @e2e-dev/eas
+```
+
+```bash pnpm
+pnpm add -D @e2e-dev/eas
+```
+
+```bash bun
+bun add -d @e2e-dev/eas
+```
+</CodeGroup>
+
+ターゲットの `device` を `expoSimulators()` に設定します。
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { mobile } from '@e2e-dev/mobile';
+import { expoSimulators } from '@e2e-dev/eas';
+
+export default {
+  targets: [
+    {
+      name: 'ios',
+      engine: mobile({
+        platform: 'ios',
+        device: expoSimulators({ buildId: process.env.E2E_IOS_BUILD_ID }),
+        videoTouches: false,
+      }),
+      app: { bundleId: 'com.example.app' },
+    },
+  ],
+  workers: 2,
+} satisfies E2EConfig;
+```
+
+`E2E_IOS_BUILD_ID` にはシミュレータービルドの ID を設定します。`EAS_BUILD_ID` は読まないでください。
+[Expo Workflows](/ci/eas-workflows) のジョブでは、Expo がこの変数に実行中のジョブの ID を設定します。
+ワークフローでは、テストジョブの `env` で、そのジョブが依存するビルドジョブの出力から変数を設定します。
+
+```yaml title=".eas/workflows/e2e.yml"
+jobs:
+  e2e_ios:
+    needs: [build_ios]
+    env:
+      E2E_IOS_BUILD_ID: ${{ needs.build_ios.outputs.build_id }}
+```
+
+<Note>
+`expoSimulators()` は以前 `easSimulators()` という名前でした。古い名前も引き続き動作しますが、
+非推奨です。
+</Note>
+
+## Expo プロジェクトをリンクする
+
+プロバイダーは、`e2e.config.ts` と同じ場所にあるアプリ設定の `extra.eas.projectId` からプロジェクト ID を読み取ります。
+この値は `eas init` が書き込みます。アプリ設定が別の場所にある場合や、プロジェクトがリンクされていない場合は、
+`projectId` を渡します。slug ではなく ID を渡してください。
+
+<Accordion title="プロバイダーがアプリ設定を読み取る方法">
+- **`app.json` または `app.config.json`**: JSON として読み取ります。ファイルに `expo` キーがある場合は、
+  その下から読み取ります。
+- **動的な設定**（`app.config.ts`、`.js`、`.mjs`、`.cjs`、`.mts`、
+  `.cts`）: 設定が ID を計算できるため、実行時の環境で、プロジェクト自身の `expo config --type public` を使って評価します。
+  プロジェクトに `expo` がインストールされている必要があります。eas-cli と同様に、`.env` ファイルは読み込まれません
+  （`EXPO_NO_DOTENV=1`）。設定が読み取る変数は、`e2e run` を開始する環境に含まれている必要があります。
+
+プロジェクトをリンクしていない設定では、セッションが始まる前にリースが失敗し、エラーにそのファイル名が示されます。
+`@e2e-dev/mobile` が古く、プロバイダーに `projectRoot` を渡せない場合もリースが失敗します。
+アップグレードするか、`projectId` を渡してください。
+</Accordion>
+
+## 認証する
+
+プロバイダーは eas-cli と同じ方法で認証します。
+
+- **`EXPO_TOKEN`**: プロジェクトにアクセスできるアカウントまたはロボットの
+  [アクセストークン](https://expo.dev/settings/access-tokens)です。`e2e run` を開始する環境に設定します。
+  ログインよりも優先されます。
+- **eas-cli のログイン**: `eas login` によるログインで、eas-cli は
+  `~/.expo/state.json`（Windows では `USERPROFILE`）に保存します。
+
+セッションは常に本番環境の `api.expo.dev` に接続するため、eas-cli の
+`EXPO_STAGING` と `EXPO_LOCAL` のログインは使われません。
+
+<Warning>
+CI ランナーや共有マシンでは `EXPO_TOKEN` を設定してください。設定しないと、誰かがランナーのホームに残したログインによって、
+その人のアカウントで課金対象のセッションが開始されます。
+</Warning>
+
+## アプリをインストールする
+
+シミュレーターはアプリがない状態で起動します。次のいずれかの方法でアプリを入れます。
+
+| 方法 | `expoSimulators()` | ターゲットの `app` |
+| --- | --- | --- |
+| Expo Build のビルド | `buildId`: シミュレータービルド（`eas.json` で `"ios": { "simulator": true }`）または APK。セッションの準備が整う前に Expo がインストールして起動します。ビルドが Expo の外に出ることはありません。 | `app.open()` が起動するアプリを判別できるように `bundleId` を指定します。`appPath` は指定しません。指定するとリースが失敗します。 |
+| URL | `applicationArchiveUrl`: Expo が同じ方法でダウンロードしてインストールするアプリアーカイブ。 | `bundleId` を指定し、`appPath` は指定しません。 |
+| ローカルビルド | どちらのオプションも指定しません。 | [ローカルシミュレーター](/mobile)と同様に、`bundleId`、`appPath`、`device.installApp()` を呼び出すフィクスチャを用意します。ビルドはセッションのデーモンを通じて各シミュレーターにアップロードされます。 |
+
+## オプション
+
+| オプション              | デフォルト  | 意味 |
+| ----------------------- | ----------- | ------- |
+| `projectId`             | アプリ設定の値 | [Expo プロジェクトをリンクする](#link-the-expo-project)を参照してください。 |
+| `buildId`               | なし        | [アプリをインストールする](#install-the-app)を参照してください。 |
+| `applicationArchiveUrl` | なし        | [アプリをインストールする](#install-the-app)を参照してください。 |
+| `device`                | Expo が選択 | iOS のデバイス名または UDID（`'iPhone 17 Pro'`）、または Android AVD のハードウェアプロファイル（`'pixel_9'`）。 |
+| `maxIdleTimeMinutes`    | `10`        | agent-device のコマンドがないまま Expo がセッションを停止するまでの分数です。これにより、異常終了した実行のセッションも停止します。これより短い `maxDurationMinutes` を指定すると、デフォルトはその値より 1 少ない値になります。 |
+| `maxDurationMinutes`    | アカウントの上限 | 準備完了後にセッションを実行できる分数です。Expo は上限を 40 分（高優先度プランでは 115 分）に設定しています。 |
+| `agentDeviceVersion`    | エンジンの値 | セッションのデーモンの agent-device バージョンです。デフォルトは `@e2e-dev/mobile` が固定しているクライアントと一致します。 |
+| `tags`                  | `[]`        | 実行自体のタグに加えて、すべてのセッションに付けるタグです。 |
+
+不明なオプション、`buildId` と `applicationArchiveUrl` の同時指定、または一緒に渡した
+`maxDurationMinutes` 未満になっていない `maxIdleTimeMinutes` は、設定の読み込みを
+`INVALID_CONFIG` で失敗させます。どちらの分数の上限も 0 以上の整数でなければなりません。
+
+## セッション
+
+各ターゲットは最大 `workers` 個のセッションを開始します。テストファイルの数がそれより少ない場合は、その数だけ開始します。
+セッションは実行の計時が始まる前に並列で開始され、それぞれ約 3 分かかります（キュー、起動、ビルドのインストール）。
+すべての準備が整うとテストが始まります。
+
+Expo は準備完了から `maxDurationMinutes` 後にセッションを停止するため、1 回の実行は 1 つのセッションに収まる必要があります。
+これより長いテストスイートは、より多くのワーカーや CI ジョブに分割してください。
+
+Expo は、アカウントの同時実行数の上限を超えたセッションをキューに入れます。実行が終わるまでどのセッションも終了しないため、
+`workers` と Expo ターゲット数の積をその上限内に収めてください。
+
+- 2 分経ってもキューに残っているセッションは
+  `still queued at Expo after two minutes` とログに出力します。
+- ターゲットは 1 つずつ順番に準備されるため、あるターゲットの準備済みセッションは、
+  次のターゲットのセッションがキューで待機し起動する間、アイドル状態になります。
+- 別のセッションが準備完了になってから `maxIdleTimeMinutes` が経過してもキューに残っているセッションがあると、
+  Expo がアイドル状態のセッションを停止している可能性があるため、リースが失敗します。その後、実行は
+  すべてのセッションを停止します。
+
+## 実行を見る
+
+プロバイダーは、各セッションを作成するときに、そのセッションの expo.dev ページをログに出力します。
+
+```text
+ℹ leasing 2 ios device(s) from expo-simulators
+ℹ expo-simulators (1 of 2): simulator session 01a0…, https://expo.dev/accounts/acme/projects/shop/simulator-sessions/01a0…
+ℹ expo-simulators: leased 01a0…
+```
+
+トークンなしで開けるブラウザプレビューは `watch at <url>` としてログに出力されます。
+トークンが必要なプレビューは、トークンでシミュレーターを操作できてしまうため、ログには出力されません。
+
+セッションには `e2e <target> <n> of <total>` という名前が付き、`e2e`、
+`e2e-run:<run id>`、`e2e-target:<target>` のタグが付きます。ある実行のセッションを一覧表示するには、
+`eas simulator:list --tag e2e-run:<run id>` を使います。
+
+## 録画
+
+[動画](/reference/config#video)を録画する試行は、ローカルと同様に agent-device を通じて録画し、
+アーティファクトディレクトリの `video/video.mp4` に保存します。
+
+[セットアップ](#setup)のように、モバイルエンジンの `videoTouches: false` を設定してください。
+agent-device は録画の停止時にタッチを録画に描き込みますが、Expo の iOS シミュレーターではこれに数分かかります。
+その結果、試行は `cleanupTimeout` を使い切り、ファイルが残りません。タッチを描き込まなければ、停止は約
+2 秒で終わります。
+
+## セッションの開始に失敗した場合
+
+`EXPO_TOKEN` も eas-cli のログインもない場合、アカウントで Expo Simulators を利用できない場合、
+またはセッションの開始に失敗した場合は、リースが失敗し、テストを実行する前に実行が終了します。
+セッションは、エラーになったとき、キューに長く留まりすぎたとき（[セッション](#sessions)を参照）、
+またはキューを出てから 15 分経ってもまだ起動中のときに失敗します。
+
+プロバイダーは、失敗したセッションと、その実行のほかのセッションを停止します。
+キューにあるセッションについてはジョブをキャンセルし、Expo が後からそれを開始してアカウントに課金しないようにします。
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="ホスト型デバイス" icon="mobile" href="/mobile#hosted-devices">
+    デバイスプロバイダーがデバイスをリースする仕組みと、独自のプロバイダーの書き方。
+  </Card>
+  <Card title="Expo Workflows" icon="/images/integrations/expo.svg" href="/ci/eas-workflows">
+    Expo のワークフローでテストスイートを実行します。
+  </Card>
+</CardGroup>

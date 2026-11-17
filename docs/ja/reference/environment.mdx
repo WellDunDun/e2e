@@ -1,0 +1,211 @@
+---
+title: 環境変数
+description: ランナーとファーストパーティのエンジンが読み取るすべての変数と、それぞれの役割です。
+"og:image": "https://e2e.com/docs/images/og/reference/environment.png?v=67a4d71e70"
+"twitter:image": "https://e2e.com/docs/images/og/reference/environment.png?v=67a4d71e70"
+---
+
+これらの変数は、ランナーとファーストパーティのパッケージを設定します。表の中で、
+`set` は変数が存在すること、`value` は空でないこと、`flag` は空・`0`・`false`
+のいずれでもないことを意味します。フラグの値は大文字と小文字を区別しません。
+
+```bash
+export E2E_USER_ADMIN_PASSWORD="$ADMIN_PASSWORD"
+export E2E_CACHE_DIR=~/.cache/e2e
+export E2E_TELEMETRY_DISABLED=1
+```
+
+## リファレンス
+
+### モデル
+
+モデルは `e2e.config.ts` で設定します。API キーはそのプロバイダーが読み取ります。
+`gateway()` は `AI_GATEWAY_API_KEY`、`openrouter()` は
+`OPENROUTER_API_KEY`、`openai()` は `OPENAI_API_KEY` を使います。
+`AI_GATEWAY_API_KEY` がない場合、`gateway()` は
+[Vercel OIDC トークン](/models#vercel-oidc-instead-of-a-key)を使います。認証情報が
+ない場合は、最初のモデル呼び出しで失敗します。サブスクリプションモデルは、代わりに
+保存済みのログインを使います。
+[モデル](/models)と[サブスクリプション](/subscriptions)を参照してください。
+
+| 変数 | 例 | 読み取り | 効果 |
+| --- | --- | --- | --- |
+| [`E2E_OAUTH_CREDENTIALS`](#e2e_oauth_credentials) | `E2E_OAUTH_CREDENTIALS="$(cat oauth.json)"` | value | 保存済みのサブスクリプションログインを JSON で指定します |
+| [`OPENCODE_API_KEY`](#opencode_api_key) | `OPENCODE_API_KEY=<key>` | value | 保存済みの `opencode-console` ログインを置き換えます |
+| `XDG_CONFIG_HOME` | `XDG_CONFIG_HOME=~/.config` | value | 保存済みログインのディレクトリで、`$XDG_CONFIG_HOME/e2e/oauth.json` になります。デフォルトは `~/.config/e2e/oauth.json` です |
+
+#### `E2E_OAUTH_CREDENTIALS`
+
+保存済みのサブスクリプションログインを JSON で指定します。`oauth.json` の内容で、
+誰もサインインできないマシン向けです。
+
+- `e2e/oauth/*` モデルと `e2e models` は、
+  `$XDG_CONFIG_HOME/e2e/oauth.json` の代わりにこれを読み取ります。
+- `e2e login` と `e2e logout` はこれを変更しません。
+- 更新されたトークンは書き戻されません。
+
+#### `OPENCODE_API_KEY`
+
+OpenCode Console のサービスアカウント API キー、または OpenCode Go サブスクリプションの
+API キーです。`opencodeConsole()` と `e2e models opencode-console` は、保存済みの
+`opencode-console` ログインの代わりにこれを使います。OpenCode も同じ変数を読み取ります。
+
+### 認証情報とシークレット
+
+| 変数 | 例 | 読み取り | 効果 |
+| --- | --- | --- | --- |
+| `E2E_USER_<NAME>_USERNAME` | `E2E_USER_ADMIN_USERNAME=admin@example.test` | set | `credentials.<name>.username` を置き換えます |
+| `E2E_USER_<NAME>_PASSWORD` | `E2E_USER_ADMIN_PASSWORD="$ADMIN_PASSWORD"` | set | `credentials.<name>.password` を置き換えます |
+| `E2E_SECRET_<NAME>` | `E2E_SECRET_API_KEY="$API_KEY"` | set | `secrets.<name>` の値を置き換えます |
+
+- `<NAME>` は名前を大文字にし、`A-Z0-9` 以外のすべての文字を `_` に置き換えたものです。
+  たとえば `power-user` は `E2E_USER_POWER_USER_USERNAME` になります。
+- 名前が同じ `<NAME>` に対応する 2 つの認証情報、または 2 つのシークレットは、
+  変数が設定されているかどうかにかかわらず、設定の読み込み時に `INVALID_CONFIG`
+  になります。これにより、1 回のローテーションで 2 つのエントリーが置き換わることは
+  ありません。メッセージには該当するエントリーと変数が示されます。
+  たとえば、`api-key` と `api_key` はどちらも `E2E_SECRET_API_KEY` を読み取り、
+  `svc-a` と `svc_a` はどちらも `E2E_USER_SVC_A_USERNAME` と `_PASSWORD` を読み取ります。
+- 認証情報とシークレットはプレフィックスが異なるため、同じ名前を共有できます。
+- 設定にない名前の変数は無視されます。
+- 空のパスワードやシークレットは `INVALID_CONFIG` になり、6 文字（コードポイント）
+  より短いものも同様です。リダクションは値のすべての出現箇所を書き換えるため、
+  それほど短い値では通常のテキストまで巻き込んでしまいます。空のユーザー名は
+  受け付けられます。
+
+### 実行モード
+
+| 変数 | 例 | 読み取り | 効果 |
+| --- | --- | --- | --- |
+| [`CI`](#ci) | `CI=1` | flag | CI モード |
+
+#### `CI`
+
+CI モードを有効にします。
+
+- `retries` のデフォルトは 1、`workers` のデフォルトは 1 になります。
+- `cache` のデフォルトは `read-only` になります。
+- フォーカスされたテストは `ONLY_IN_CI` になります。
+- アプリのコマンドの `reuseExisting` は無視されます。
+
+### リプレイキャッシュ
+
+| 変数 | 例 | 読み取り | 効果 |
+| --- | --- | --- | --- |
+| [`E2E_CACHE_DIR`](#e2e_cache_dir) | `E2E_CACHE_DIR=~/.cache/e2e` | value | [`cache.dir`](/reference/config#cache) を置き換えます |
+
+#### `E2E_CACHE_DIR`
+
+`e2e run` と `e2e cache` の [`cache.dir`](/reference/config#cache) を置き換えます。
+プロジェクトルートから解決されます。
+
+- `~` または先頭の `~/` はホームディレクトリを表します。
+- `--cache-dir` がこれより優先されます。
+- カスタムの `cache.store` はこれを無視します。
+- キャッシュモードは設定どおりのままで、`--no-cache` を指定すればキャッシュは
+  引き続き無効になります。
+
+### 診断
+
+| 変数 | 例 | 読み取り | 効果 |
+| --- | --- | --- | --- |
+| `NO_COLOR` | `NO_COLOR=1` | set | プレーンな CLI 出力にします。設定しない場合、TTY または CI では色が有効になり、パイプ時は無効になります |
+| `FORCE_COLOR` | `FORCE_COLOR=1` | set | パイプ時でも CLI 出力に色を付けます |
+| `TERM` | `TERM=dumb` | value | `dumb` の場合、CI と同様に `e2e init` のロゴをアニメーションなしの静止状態で描画します |
+| `GITHUB_SHA`, `GITHUB_HEAD_REF`, `GITHUB_REF_NAME` | `GITHUB_REF_NAME=main` | value | `git` がプロジェクトルートを読み取れないときに、レポートが `run.vcs` に記録するコミットとブランチです。`GITHUB_HEAD_REF` が `GITHUB_REF_NAME` より優先されます |
+
+`--debug` と `--ai-trace` は変数ではなくフラグです。
+[CLI](/reference/cli#e2e-run) を参照してください。
+
+### テレメトリー
+
+| 変数 | 例 | 読み取り | 効果 |
+| --- | --- | --- | --- |
+| `E2E_TELEMETRY_DISABLED` | `E2E_TELEMETRY_DISABLED=1` | flag | 匿名の利用状況テレメトリーと[アップデートチェック](/reference/cli#help-and-version)を無効にします。`e2e telemetry disable` は、テレメトリーについて同じ選択を設定ファイルに保存します |
+| `DO_NOT_TRACK` | `DO_NOT_TRACK=1` | flag | `E2E_TELEMETRY_DISABLED` と同じです |
+| `E2E_UPDATE_CHECK_DISABLED` | `E2E_UPDATE_CHECK_DISABLED=1` | flag | 新しい e2e リリースの毎日のチェックを無効にします |
+| `NO_UPDATE_NOTIFIER` | `NO_UPDATE_NOTIFIER=1` | flag | `E2E_UPDATE_CHECK_DISABLED` と同じです |
+| `npm_config_registry` | `npm_config_registry=https://npm.example.com/` | value | [`e2e upgrade`](/reference/cli#e2e-upgrade) がバージョンを読み取るレジストリです。デフォルトは `https://registry.npmjs.org/` です。パッケージマネージャーは、実行するコマンドに対してこれを設定します |
+| `E2E_TELEMETRY_DEBUG` | `E2E_TELEMETRY_DEBUG=1` | flag | すべてのテレメトリーイベントを送信せずに stderr に出力します |
+| [`E2E_TELEMETRY_FLEET`](#e2e_telemetry_fleet) | `E2E_TELEMETRY_FLEET=acme` | value | ユーザーのために e2e を実行しているプラットフォームの名前を指定します |
+| `XDG_CONFIG_HOME` | `XDG_CONFIG_HOME=~/.config` | value | 設定ファイルとアップデートチェックの `update-check.json` のディレクトリで、`$XDG_CONFIG_HOME/e2e` になります。デフォルトは `~/.config/e2e` です |
+| `APPDATA` | `APPDATA=C:\Users\ada\AppData\Roaming` | value | Windows での同等の設定で、`%APPDATA%\e2e` になります。デフォルトは `~/AppData/Roaming/e2e` です |
+
+#### `E2E_TELEMETRY_FLEET`
+
+ユーザーのために e2e を実行しているプラットフォームの名前を指定します。
+
+- イベントはマシンごとの ID ではなく `fleet:<name>` に帰属します。
+- 設定ファイルは書き込まれず、通知も表示されません。
+- 単純なトークンではない値は `other` として送信されます。
+
+#### 検出される環境
+
+テレメトリーは、CI ベンダーやコーディングエージェントが設定するマーカーも確認します。
+送信されるのは導き出された名前だけです。
+
+| マーカー | 報告される値 |
+| --- | --- |
+| `GITHUB_ACTIONS`, `GITLAB_CI`, `CIRCLECI`, `BUILDKITE`, `JENKINS_URL`, `TRAVIS`, `BITBUCKET_BUILD_NUMBER`, `TF_BUILD`, `TEAMCITY_VERSION`, `CODEBUILD_BUILD_ID`, `VERCEL`, `NETLIFY`, `DRONE`, `SEMAPHORE`, `APPVEYOR`, `WOODPECKER`, `EAS_BUILD`, `BITRISE_IO`, `CM_BUILD_ID`, `CI_XCODE_CLOUD` | `ci_name`: `github-actions`, `gitlab`, `circleci`, `buildkite`, `jenkins`, `travis`, `bitbucket`, `azure-pipelines`, `teamcity`, `aws-codebuild`, `vercel`, `netlify`, `drone`, `semaphore`, `appveyor`, `woodpecker`, `eas`, `bitrise`, `codemagic`, `xcode-cloud`。`CI` だけが設定されている場合は `unknown` |
+| `CLAUDECODE`, `CLAUDE_CODE`, `CURSOR_AGENT`, `CURSOR_TRACE_ID`, `CODEX_SANDBOX`, `CODEX_THREAD_ID`, `CODEX_CI`, `GEMINI_CLI`, `COPILOT_GITHUB_TOKEN`, `COPILOT_MODEL`, `COPILOT_ALLOW_ALL`, `OPENCODE_CLIENT`, `AUGMENT_AGENT`, `ANTIGRAVITY_AGENT`, `REPL_ID`, `AI_AGENT` | `coding_agent`: `claude-code`, `cursor`, `codex`, `gemini-cli`, `copilot`, `opencode`, `augment`, `antigravity`, `replit`, `other` |
+| `WSL_DISTRO_NAME` | `wsl: true` |
+| `npm_config_user_agent` | `package_manager`: 呼び出し元のパッケージマネージャー。`e2e init` も同じ変数を読み取り、インストールコマンドを選びます |
+
+何が送信されるか、またその読み方は[テレメトリー](/telemetry)のページにあります。
+
+### レポーター
+
+`@e2e-dev/github` は、実行が終了したときに GitHub Actions が設定する変数を読み取ります。
+
+| 変数 | 例 | 読み取り | 効果 |
+| --- | --- | --- | --- |
+| `GITHUB_ACTIONS` | `GITHUB_ACTIONS=true` | value | これがない場合、レポーターは何も投稿せず、その旨を表示します |
+| `GITHUB_REPOSITORY`, `GITHUB_RUN_ID`, `GITHUB_EVENT_NAME`, `GITHUB_WORKFLOW`, `GITHUB_JOB` | `GITHUB_REPOSITORY=acme/shop` | value | ランナーが常に設定します。いずれかが欠けているとレポーターは失敗し、その変数名を示します。リポジトリと実行 ID からアーティファクトのリンクを組み立てます。イベント名は「プルリクエストではない」行に表示されます。ワークフローとジョブは、再実行時に自分のコメントを見つけるためのマーカーに含まれます |
+| `GITHUB_TOKEN`, `GH_TOKEN` | `GITHUB_TOKEN=<token>` | value | コメントを投稿します。最初に設定されているものが優先されます。設定されていなくても、ジョブサマリーは書き込まれます。フォークの `pull_request` トークンは読み取り専用で投稿できません。[何も投稿されないとき](/github#when-nothing-is-posted)を参照してください |
+| `GITHUB_EVENT_PATH`, `GITHUB_REF` | `GITHUB_REF=refs/pull/42/merge` | value | イベントペイロードから得るプルリクエスト番号と head コミット、または `refs/pull/N/merge` から得る番号です |
+| `GITHUB_SHA` | `GITHUB_SHA=<commit>` | value | イベントがプルリクエストに関するものでない場合に、ソースリンクが指すコミットです |
+| `GITHUB_WORKSPACE` | `GITHUB_WORKSPACE=/home/runner/work/shop/shop` | value | チェックアウトのルートです。ソースリンクはその中のプロジェクトのパスを付け加えるため、サブディレクトリにあるスイートでも正しいファイルにリンクします |
+| `GITHUB_SERVER_URL`, `GITHUB_API_URL` | `GITHUB_SERVER_URL=https://github.example.com` | value | Enterprise Server 用の GitHub ホストです。デフォルトは `https://github.com` と `https://api.github.com` です |
+| `GITHUB_STEP_SUMMARY` | `GITHUB_STEP_SUMMARY=<file>` | value | コメントのテキストが追記されるジョブサマリーファイルです |
+
+### エンジン
+
+| 変数 | 例 | 読み取り | 効果 |
+| --- | --- | --- | --- |
+| `PLAYWRIGHT_BROWSERS_PATH` | `PLAYWRIGHT_BROWSERS_PATH=~/.cache/ms-playwright` | value | Playwright のブラウザキャッシュで、エンジンの `prepare` フックが尊重します |
+| `PLAYWRIGHT_SKIP_BROWSER_GC` | `PLAYWRIGHT_SKIP_BROWSER_GC=0` | value | エンジンのブラウザインストールではデフォルトで `1` になり、キャッシュ内の他のブラウザを残します。`0` にするとインストール時にそれらを削除できます |
+| `KERNEL_API_KEY` | `KERNEL_API_KEY=<key>` | value | `@e2e-dev/kernel` の `kernel()` がブラウザを作成するときに使う API キーです。設定されていない場合、ブラウザのリースは失敗します。[Kernel](/integrations/kernel) を参照してください |
+| `LIGHTPANDA_PATH` | `LIGHTPANDA_PATH=/opt/lightpanda` | value | `@e2e-dev/lightpanda` の `lightpanda()` が CDP サーバーを起動するバイナリです。設定されていない場合は、`PATH` 上の `lightpanda`、`~/.lightpanda`、または `~/.local/bin` を使います。[Lightpanda](/integrations/lightpanda) を参照してください |
+| `MOLI_PATH` | `MOLI_PATH=/opt/moli` | value | `binary` が設定されていないときに `@e2e-dev/moli` の `moli()` が起動する実行ファイルです。`MOLI_PATH` がない場合は、`PATH`、次に `~/.local/bin/moli` を検索します。[Moli](/integrations/moli) を参照してください |
+| [`EXPO_TOKEN`](#expo_token) | `EXPO_TOKEN=<token>` | value | `@e2e-dev/eas` の `expoSimulators()` が使う Expo アクセストークンです |
+| `HOME`, `USERPROFILE` | `HOME=/home/ada` | value | `EXPO_TOKEN` がないときに `expoSimulators()` が eas-cli のログインを探す場所です。Windows では `USERPROFILE`、それ以外では `HOME` を使い、設定されていない場合は OS ユーザーのホームを使います |
+| `LIMRUN_API_KEY` | `LIMRUN_API_KEY=<key>` | value | `@e2e-dev/limrun` の `limrun()` がデバイスをリースするときに使う API キーです。設定されていない場合、リースは `INVALID_CONFIG` で失敗します。[Limrun](/integrations/limrun) を参照してください |
+| `LIMRUN_BASE_URL` | `LIMRUN_BASE_URL=<url>` | value | Limrun API のホストです。デフォルトは `https://api.limrun.com` です |
+| `BROWSERSTACK_USERNAME`, `BROWSERSTACK_ACCESS_KEY` | `BROWSERSTACK_USERNAME=acme_AbC123` | value | `@e2e-dev/browserstack` の `browserstack()` がデバイスをリースするときに使う BrowserStack のユーザー名とアクセスキーです。どちらかが設定されていない場合、デバイスのリースは失敗します。[BrowserStack](/integrations/browserstack) を参照してください |
+| `BROWSERSTACK_API_ENDPOINT` | `BROWSERSTACK_API_ENDPOINT=<url>` | value | `browserstack()` が `https` ビルドをアップロードし、セッションの録画を検索する App Automate API のベース URL です。デフォルトは `https://api-cloud.browserstack.com/app-automate` です。http(s) URL でない値や、ユーザー名またはパスワードを含む値は `INVALID_CONFIG` で失敗します |
+| `LT_USERNAME`, `LT_ACCESS_KEY` | `LT_USERNAME=acme` | value | `@e2e-dev/testmu` の `testmu()` がデバイスをリースするときに使う TestMu AI のユーザー名とアクセスキーです。どちらかが設定されていない場合、デバイスのリースは失敗します。`@e2e-dev/testmu/web` の `testmuBrowsers()` は、これらを各ブラウザセッションの CDP URL にのみ含め、どちらかが設定されていない場合はブラウザのリースが失敗します。[TestMu AI](/integrations/testmu) を参照してください |
+| `TESTMU_API_ENDPOINT` | `TESTMU_API_ENDPOINT=<url>` | value | `testmu()` がセッションの録画を検索する TestMu AI セッション API のベース URL です。デフォルトは `https://mobile-api.lambdatest.com/mobile-automation/api/v1` です。http(s) URL でない値や、ユーザー名またはパスワードを含む値では、検索が `INVALID_CONFIG` で失敗します。agent-device の TestMu AI プラグインもこれを読み取ります |
+| `E2B_API_KEY` | `E2B_API_KEY=<key>` | value | `@e2e-dev/e2b` の `e2b()` と `@e2e-dev/e2b/web` の `e2bBrowsers()` がサンドボックスを作成するときに使う API キーです。設定されていない場合、リースは `INVALID_CONFIG` で失敗します。[E2B](/integrations/e2b) を参照してください |
+| `E2B_DOMAIN` | `E2B_DOMAIN=e2b.example.com` | value | プロバイダーがサンドボックスを作成する E2B ドメインです。デフォルトは `e2b.app` です。専用の E2B クラスターを使う場合に設定します |
+| `E2B_API_URL` | `E2B_API_URL=<url>` | value | プロバイダーが呼び出す E2B API の URL です。デフォルトは `https://api.<E2B_DOMAIN>` です |
+| `E2B_SANDBOX_URL` | `E2B_SANDBOX_URL=<url>` | value | プロバイダーがサンドボックスのコマンドとアップロードを送信する URL です。デフォルトでは、E2B SDK が `E2B_DOMAIN` から組み立てます。e2e を起動するシェルでこれを設定する場合は、実行環境でも同じ値を設定する必要があり、そうでなければリースは `INVALID_CONFIG` で失敗します |
+| `E2E_WEB_BROWSERS_<TARGET>_<digest>` | - | value | `@e2e-dev/web` が `prepare` で書き込み、各ワーカーはこれを読み取ってリースされたブラウザを見つけます。手動で設定しないでください |
+| `E2E_AGENT_DEVICE_POOL_<TARGET>_<digest>` | - | value | `@e2e-dev/mobile` が `prepare` で書き込み、各ワーカーはこれを読み取って起動済みのデバイスを見つけます。手動で設定しないでください |
+
+#### `EXPO_TOKEN`
+
+`@e2e-dev/eas` の `expoSimulators()` がシミュレーターセッションの開始と停止に使う
+Expo アクセストークンです。[Expo Simulators](/integrations/eas) を参照してください。
+
+- 設定されていない場合は、ホームディレクトリ（[`HOME`、`USERPROFILE`](#engines)）の
+  `.expo/state.json` にある eas-cli のログインを使います。
+- どちらもない場合、デバイスのリースは失敗します。
+
+## アプリのプロセスが継承するもの
+
+アプリの `command` は、`PATH`、`HOME`、`TMPDIR`、`TMP`、`TEMP`、
+`SystemRoot`、`COMSPEC` に加えて、`command.inheritEnv` に一致する変数と
+`command.env` が設定するものを受け取ります。
+
+スキャフォールドされた設定モジュールは `APP_URL` を読み取りますが、ランナーは読み取りません。
+開発サーバーにも必要な場合は、`command.env` で渡してください。

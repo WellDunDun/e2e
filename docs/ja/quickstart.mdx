@@ -1,0 +1,327 @@
+---
+title: クイックスタート
+description: コーディングエージェントへの 1 つのプロンプトで、または手順に沿って e2e をセットアップします。
+"og:image": "https://e2e.com/docs/images/og/quickstart.png?v=4a3569d569"
+"twitter:image": "https://e2e.com/docs/images/og/quickstart.png?v=4a3569d569"
+---
+
+import { ModelProvider } from '../snippets/model-provider.jsx';
+import { SetupPrompt } from '../snippets/setup-prompt-card.jsx';
+import { Video } from '../snippets/video.jsx';
+import { VideoCard } from '../snippets/video-card.jsx';
+
+export const setupPrompt = `このプロジェクトに e2e のエンドツーエンドテストをセットアップしてください。ドキュメント: \`https://e2e.com/docs/quickstart.md\`
+
+1. \`npx e2e init --yes\`（またはこのプロジェクトに合わせた pnpm や bun の同等コマンド）を実行してください。Vercel AI Gateway を使う Web の設定、サンプルテスト、e2e スキル、MCP の設定が書き込まれます。この時点ではまだ何もインストールされません。
+2. e2e スキルを読み（\`npx e2e guide\` で表示でき、\`npx e2e guide <topic>\` でトピックを表示できます）、以下のすべてのステップでそれに従ってください。
+3. ターゲットをこのアプリに向けてください。Web アプリの場合は、その URL と開発サーバーを起動するコマンドを設定してください。iOS または Android アプリの場合は、@e2e-dev/web を @e2e-dev/mobile に置き換え、サンプルテストをモバイルエンジン向けに書き直してください。
+4. エージェントステップにどのモデルを使うか私に確認してください。ChatGPT、GitHub Copilot、OpenCode Console、SuperGrok のサブスクリプション、API キー、またはローカルモデルのいずれかです。そのプロバイダーパッケージで設定してください。サインインが必要な場合は、\`npx e2e login\` コマンドを私に伝え、私が確認するまで待ってください。
+5. 依存関係をインストールしてサンプルテストを実行し、成功するまでセットアップのエラーを修正してください。
+6. このアプリで最も重要なユーザーフローのテストを 1 つ書いて実行し、成功するまで改善を繰り返してください。`;
+
+<VideoCard
+  id="4_9z6QWShLc"
+  title="4 分で始めるエージェント型 e2e"
+  subtitle="この動画では、Kacper がシンプルな Next.js アプリをゼロから動作するエージェント型テストスイートまで仕上げます。"
+/>
+
+## コーディングエージェントでセットアップする
+
+アプリのディレクトリで、Claude Code、Codex、Cursor などのコーディングエージェントに
+次のプロンプトを貼り付けてください。
+
+<SetupPrompt>
+
+<Prompt description={setupPrompt} children={setupPrompt} actions={["copy", "cursor"]} />
+
+</SetupPrompt>
+
+エージェントが [e2e スキル](/coding-agents) をインストールするので、その後の
+「チェックアウトのテストを追加して」のようなプロンプトでは追加のセットアップは不要です。
+
+<Note>
+Web テストには Node.js 24.8 以降（Node.js 22 では 22.22.3 以降）、または [Bun](/reference/cli#bun) 1.4.3 以降を使用してください。Windows では WSL 内で実行してください。モバイルテストには、
+iOS シミュレーターのランタイムを含む Xcode、またはエミュレーターを含む Android SDK も必要です。
+</Note>
+
+## 手動でセットアップする
+
+### 最初のテストを実行する
+
+<Steps>
+  <Step title="テストプロジェクトを作成する">
+  アプリのディレクトリで次を実行します。
+
+  <CodeGroup>
+  ```bash npm
+  npx e2e init
+  ```
+
+  ```bash pnpm
+  pnpm dlx e2e init
+  ```
+
+  ```bash bun
+  bunx e2e init
+  ```
+  </CodeGroup>
+
+  **Web (Playwright)** または **Mobile (iOS/Android)** を選び、次にサブスクリプション、
+  モデルプロバイダー、または AI を使わないテストの場合は **None** を選びます。
+  ウィザードは設定とサンプルテストを書き込み、依存関係を追加し、コーディングエージェントの
+  セットアップを提案します。既存のファイルはそのまま残します。
+
+  <Tabs>
+    <Tab title="Web">
+    アプリの開発サーバーを `http://localhost:3000` で起動するか、
+    `e2e.config.ts` でそのアドレスを設定します。[e2e に起動させる](/web#starting-your-app) こともできます。
+
+    <Accordion title="Web の設定とテストの例">
+    この設定は Vercel AI Gateway を使います。ウィザードは選択したプロバイダーを設定します。
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { gateway } from 'ai';
+
+export default {
+  agents: { default: { model: gateway('openai/gpt-6-luna-fast') } },
+  targets: [{ engine: web(), app: { url: 'http://localhost:3000' } }],
+} satisfies E2EConfig;
+```
+
+```ts title="tests/example.e2e.ts"
+import { test } from '@e2e-dev/web';
+import { expect } from 'e2e';
+
+test('app opens', async ({ app, browser }) => {
+  await app.open('/');
+  await expect(browser.locator('body')).toBeVisible();
+});
+```
+    </Accordion>
+    </Tab>
+    <Tab title="モバイル">
+    `npx e2e doctor` を実行してセットアップを確認します。ウィザードは macOS では iOS を、
+    それ以外では Android を選びます。サンプルは設定アプリを開きます。
+
+    <Accordion title="iOS の設定とテストの例">
+    この設定は Vercel AI Gateway を使います。Android の場合、ウィザードは
+    `platform: 'android'` と `app: { bundleId: 'com.android.settings' }` を設定します。
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { mobile } from '@e2e-dev/mobile';
+import { gateway } from 'ai';
+
+export default {
+  agents: { default: { model: gateway('openai/gpt-6-luna-fast') } },
+  targets: [{ name: 'ios', engine: mobile({ platform: 'ios' }), app: { bundleId: 'Settings' } }],
+  workers: 1,
+} satisfies E2EConfig;
+```
+
+```ts title="tests/example.e2e.ts"
+import { test } from '@e2e-dev/mobile';
+import { expect } from 'e2e';
+
+test('Settings opens', async ({ app, screen }) => {
+  await app.open();
+  await expect(screen.getByRole('button', 'General')).toBeVisible();
+});
+```
+    </Accordion>
+
+    自分のアプリを使う方法は [モバイル](/mobile) を参照してください。
+    </Tab>
+  </Tabs>
+  </Step>
+  <Step title="サンプルを実行する">
+  <CodeGroup>
+  ```bash npm
+  npx e2e run
+  ```
+
+  ```bash pnpm
+  pnpm exec e2e run
+  ```
+
+  ```bash bun
+  bunx e2e run
+  ```
+  </CodeGroup>
+
+  e2e はブラウザをダウンロードするか、シミュレーターまたはエミュレーターを起動し、
+  アプリが開くことを確認して結果を表示します。サンプルはモデルを呼び出さないため、
+  サインインも API キーも不要です。
+  </Step>
+</Steps>
+
+<Video>
+  <video src="/images/init.mp4" aria-label="npx e2e init がエンジン、モデルゲートウェイ、コーディングエージェントのセットアップを尋ね、書き込むファイルを一覧表示します。" muted loop playsInline controls />
+
+  `npx e2e init` はいくつか質問した後、何かを書き込む前にすべての変更を表示します。
+</Video>
+
+### サブスクリプションまたは API キーを使う
+
+<Tabs>
+  <Tab title="サブスクリプション">
+  | プラン | 接続方法 |
+  | --- | --- |
+  | ChatGPT Plus または Pro | `npx e2e login openai` |
+  | GitHub Copilot | `npx e2e login github-copilot` |
+  | OpenCode Console（OpenCode Zen と OpenCode Go） | `npx e2e login opencode-console` |
+  | SuperGrok または X Premium+ | `npx e2e login spacexai` |
+  | Claude Max または Team（Claude Code） | プランの月間 API クレジットから発行した API キー。[Claude Max または Team](/subscriptions#claude-max-or-team) を参照してください。 |
+
+  Copilot は、GitHub CLI にログインしていればそのログインを使います。
+  [サブスクリプション](/subscriptions) を参照してください。
+  </Tab>
+  <Tab title="API キー">
+  プロバイダーを選択してください。そのパッケージをインストールし、読み取る変数があれば、
+  e2e を実行するターミナルで設定します。
+
+  <ModelProvider show="select" />
+
+  <ModelProvider show="install" />
+
+  <ModelProvider show="env" />
+
+  ウィザードは Vercel AI Gateway、OpenRouter、OpenAI 互換エンドポイント向けの設定を
+  書き込みます。それ以外のプロバイダーでは、`e2e.config.ts` のモデルの import と
+  `model` の値を置き換え、`agent` を `agents.default` として使います。
+
+  <ModelProvider show="model" />
+
+  ローカルモデルやその他のオプションについては [モデル](/models) を参照してください。
+  </Tab>
+</Tabs>
+
+### エージェントステップを追加する
+
+`agent.act` には 1 回の呼び出しにつき 1 つの [アトミックなゴール](/core-concepts#goals) を渡し、
+その後に結果を確認します。サンプルを自分のアプリのフローに合わせてください。
+
+<Tabs>
+  <Tab title="Web">
+```ts title="tests/agent.e2e.ts"
+import { test } from '@e2e-dev/web';
+import { expect } from 'e2e';
+
+test('a visitor signs up for a trial', async ({ app, agent, screen }) => {
+  await app.open('/');
+
+  await agent.act('sign up for a free trial as {name} with email {email}', {
+    params: { name: 'Ada Lovelace', email: 'ada@example.test' },
+  });
+
+  await agent.assert('the welcome screen greets Ada by name');
+  await expect(screen.getByRole('status')).toContainText('trial');
+});
+```
+  </Tab>
+  <Tab title="モバイル (iOS)">
+```ts title="tests/agent.e2e.ts"
+import { test } from '@e2e-dev/mobile';
+import { expect } from 'e2e';
+
+test('the agent opens General', async ({ agent, app, device }) => {
+  await app.open();
+  await agent.act('open {section} settings', { params: { section: 'General' } });
+
+  await agent.assert('the General settings screen is showing');
+  await expect(device.locator('role=navigation-bar id=General')).toBeVisible();
+});
+```
+
+  `app.open()` はアプリを新しく起動します。これがないと、テストは前のテストが
+  デバイスを残した状態から始まります。`device.locator` は
+  [agent-device セレクター](/mobile#the-device-fixture) を受け取ります。
+  </Tab>
+</Tabs>
+
+`params` はゴールのプレースホルダーを埋めます。`agent.assert` は画面を判定します。
+`expect` は正確な値を確認します。
+
+<CodeGroup>
+```bash npm
+npx e2e run tests/agent.e2e.ts
+```
+
+```bash pnpm
+pnpm exec e2e run tests/agent.e2e.ts
+```
+
+```bash bun
+bunx e2e run tests/agent.e2e.ts
+```
+</CodeGroup>
+
+ウィザードで **None** を選んだ場合は、先に [モデルを追加](/models) してください。
+Web テストの様子を見るには `--headed` を追加します。キャッシュされたアクションをスキップするには `--no-cache` を追加します。
+
+### プロジェクトを設定する
+
+`e2e.config.ts` にはオプションが含まれます。多くのプロジェクトが `init` の後に
+変更するのは次のオプションです。
+
+| 目的 | 設定 | 参照 |
+| --- | --- | --- |
+| アプリを指定する | `app.url`、モバイルでは `app.bundleId` | [テスト対象のアプリ](/reference/config#the-app-under-test) |
+| 実行時にアプリを起動する | `app.command` | [アプリの起動](/web#starting-your-app) |
+| モデルを使う | `agents.default.model` | [モデル](/models) |
+| 複数のブラウザやデバイスでテストする | それぞれに `name` 付きの `targets` エントリを 1 つずつ | [targets](/reference/config#targets) |
+| テストの時間を延ばす | `timeout`、`actionTimeout`、`assertionTimeout` | [timeout](/reference/config#timeout) |
+| 失敗したテストをリトライする | `retries`、CI では `1` | [retries](/reference/config#retries) |
+| テストを並列に実行する | `workers`、CI では `1` | [workers](/reference/config#workers) |
+| テストファイルを選ぶ | `tests` | [tests](/reference/config#tests) |
+| トレースと動画を残す | `trace`、`video` | [記録](/reference/config#recording) |
+| JUnit レポートを書き出す | `reporters: ['list', 'junit']` | [reporters](/reference/config#reporters) |
+| サインインして API キーを渡す | `credentials`、`secrets` | [認証](/authentication) |
+| CI でリプレイキャッシュを書き込む | `cache: 'read-write'` | [キャッシュ](/cache) |
+
+<Accordion title="よく使うオプションを含む設定の例">
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { gateway } from 'ai';
+
+const app = {
+  url: process.env.APP_URL ?? 'http://localhost:3000',
+  command: { executable: 'npm', args: ['run', 'dev'], reuseExisting: true },
+};
+
+export default {
+  agents: { default: { model: gateway('openai/gpt-6-luna-fast') } },
+  targets: [
+    { name: 'chromium', engine: web({ viewport: { width: 1440, height: 900 } }), app },
+    { name: 'firefox', engine: web({ browser: 'firefox' }), app },
+  ],
+  timeout: 180_000,
+  workers: 4,
+  reporters: ['list', 'junit'],
+  video: 'retain-on-failure',
+} satisfies E2EConfig;
+```
+
+`--target firefox` は 1 つのターゲットだけを実行します。同じ `command` を共有するターゲットは、
+1 つのサーバープロセスを共有します。
+</Accordion>
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="コアコンセプト" icon="pen-to-square" href="/core-concepts">
+    ゴール、アサーション、ロケーター。
+  </Card>
+  <Card title="認証" icon="key" href="/authentication">
+    アプリのログインを再利用し、パスワードをモデルの入力に含めません。
+  </Card>
+  <Card title="デバッグ" icon="bug" href="/debugging">
+    失敗、スクリーンショット、トレースを読み解きます。
+  </Card>
+  <Card title="継続的インテグレーション" icon="code-branch" href="/ci">
+    GitHub Actions、Expo Workflows、Bitrise、Codemagic でテストを実行します。
+  </Card>
+</CardGroup>

@@ -1,0 +1,322 @@
+---
+title: エンジンを書く
+description: 別の UI プラットフォーム向けに e2e のエンジン契約を実装します。
+"og:image": "https://e2e.com/docs/images/og/writing-an-engine.png?v=093c02efc1"
+"twitter:image": "https://e2e.com/docs/images/og/writing-an-engine.png?v=093c02efc1"
+---
+
+エンジンは、`e2e/engine` の契約を通じて、`screen`、`app`、エージェントの呼び出しを
+UI プラットフォームに接続します。デスクトップアプリ、TV、その他のプラットフォームをテストするには、
+エンジンを書きます。`@e2e-dev/web` と `@e2e-dev/mobile` は同じ公開 API である
+`defineEngine` を使っており、完全な実装例になっています。
+
+このページでは、ランナーのプロセス内で提供される TypeScript のエンジンを作成します。
+別のプロセスや言語でエンジンを実行するには、[エンジンサーバー](/engine-servers)を参照してください。
+
+エンジンが操作するのはユーザーインターフェースだけです。受信トレイ、データベース、テスト用 API には、
+[`test.extend`](/reference/test#your-own-fixtures) でフィクスチャを書いてください。
+
+## 責任の境界
+
+ランナーはテストとポリシーを管理します。エンジンは UI を観察し、操作します。
+
+| 担当 | 責任範囲 |
+| --- | --- |
+| ランナー | 収集、ターゲット、リトライ、フック、セッション。クエリとアサーションのポーリング、厳密な単一一致のチェック、ステップの記録、タイムアウト。エージェントの計画、プロンプト、予算、台帳。ツールの認可、シークレットの解決、多層防御としてのマスク |
+| エンジン | 1 回の即時クエリ、1 つのノードの読み取り。1 つのノードの操作可能性と入力のディスパッチ。プロセス、ページ、デバイスの仕組み。安全な観察結果のソースでのマスク |
+
+`locate` は、現在一致するものを即座に返すか、空の配列を返します。クエリをリトライしたり、
+複数の一致を拒否したりしないでください。
+
+## エンジンの形
+
+`defineEngine` からハンドルを返します。`defineEngine` は、設定の読み込み時にマニフェストを検証し、
+エンジンのケイパビリティを算出します。
+
+<Note>
+型とヘルパーは `@e2e-dev/core/engine` からのみインポートしてください。内部のサブパスはありません。
+`@e2e-dev/core` を peer dependency として宣言すると、エンジン、ランナー、
+[@e2e-dev/core](/core) のプログラムが 1 組のエラークラスを共有できます。`e2e/engine` は
+同じモジュールを再エクスポートしているため、それをインポートして `e2e` を peer にしているエンジンも、
+引き続きランナーの下で動作します。
+</Note>
+
+このスケルトンは、プラットフォーム用の `createClient` アダプターがあることを前提としています。
+そのノードは[セマンティックツリーのルール](#nodes-and-refs)に従う必要があります。
+
+```ts title="src/index.ts" expandable
+import { ConfigurationError, defineEngine, resolveExpression, type EngineHandle } from '@e2e-dev/core/engine';
+
+export function hyperdrive(options: { device: string }): EngineHandle {
+  const client = createClient(options);
+  let bundleId = '';
+  return defineEngine({
+    name: 'hyperdrive',
+    version: '1.0.0',
+    spiVersion: 1,
+    platform: 'ios',
+    validateApp(app, { targetName }) {
+      if (app.bundleId === undefined) {
+        throw new ConfigurationError('INVALID_CONFIG', `target "${targetName}" needs app.bundleId`);
+      }
+    },
+    async init(info) {
+      bundleId = info.app.bundleId!;
+      await client.boot();
+    },
+    async dispose(context) { await client.shutdown({ signal: context.signal }); },
+    async observe() {
+      const screen = await client.snapshot();
+      return {
+        location: screen.title,
+        // One root with a stable id: `perform(root, swipe)` is the viewport swipe.
+        root: { ref: { id: 'root', revision: '' }, role: 'window', children: screen.nodes },
+        viewport: screen.viewport,
+      };
+    },
+    async locate(expression) {
+      const screen = await client.snapshot();
+      return resolveExpression(expression, screen.nodes);
+    },
+    actions: ['tap', 'fill', 'swipe'],
+    async perform(ref, action) {
+      switch (action.kind) {
+        case 'tap': return client.tap(ref.id);
+        case 'fill': return client.type(ref.id, action.value);
+        case 'swipe': return client.scroll(ref.id === 'root' ? undefined : ref.id, action.direction);
+      }
+    },
+    session: {
+      async back() { await client.back(); },
+      async restart() { await client.relaunch(bundleId); },
+    },
+  });
+}
+```
+
+```ts title="e2e.config.ts"
+targets: [{ name: 'phone', engine: hyperdrive({ device: 'iPhone 16' }), app: { bundleId: 'com.example.app' } }],
+```
+
+- `version` は必須です。レポートに表示され、保存したセッションは、それを保存したときと同じ
+  バージョンでのみ復元されます。リプレイキャッシュのキーには使われません。
+- `locate` は `screen` のクエリに応答します。エクスポートされている `resolveExpression` は、
+  標準のクエリルールをセマンティックツリーに適用します。
+- テスト対象のアプリはターゲットの `app` であり、エンジンのオプションではありません。
+  `validateApp` は設定の読み込み時にそれをチェックします。`prepare` と `init` はそれを
+  `info.app` として受け取ります。
+
+## ケイパビリティ
+
+実装した任意のメソッドによって、エンジンのケイパビリティが決まります。実装されていないメソッドの
+呼び出しは `UNSUPPORTED_CAPABILITY` で失敗します。まずは次のものから始めてください。
+
+| メンバー | 使えるようになるもの |
+| --- | --- |
+| `observe(context, options?)` | エージェントによる観察とリプレイキャッシュ |
+| `perform(ref, action, context)` + `actions` | 宣言した種類のノードアクション（`swipe` によるビューポートのスクロールを含む） |
+| `locate(expression, context)` | `screen`、`Locator`、`expect(locator)` |
+| `validateApp(app, info)` | ターゲットの `app` に対する設定読み込み時のチェック。プラットフォームが必要とするフィールドや操作できないフィールドについては、`info.targetName` を示して `INVALID_CONFIG` を投げます。[リファレンス](/reference/engine#app) |
+| `session.{open?,back?,resize?,switchTab?,closeTab?,restart?,reset?}` | `app.open()`、`app.back()`、`app.restart()`、`app.clearState()`、およびエージェントの `navigate`、`back`、`resize_viewport`、`switch_tab`、`close_tab` の動作 |
+
+ポインター操作、キーボード、保存された状態、アーティファクト、提供フィクスチャも
+任意のケイパビリティです。`actions`、`location`、`pointer`、`keyboard` には
+`observe` が必要です。エージェントには、宣言した種類によって使えるようになるツールだけが渡されます。
+[エンジンリファレンス](/reference/engine#capabilities)には、すべてのメンバーと、
+どの種類がどのツールを使えるようにするかが記載されています。
+
+エージェントのアクションとロケーターのアクションは、どちらも `LocatorAction` として `perform` に
+届きます。あるノードが宣言したアクションを実行できない場合は、`UNSUPPORTED_CAPABILITY` を投げてください。
+
+`session.open` は、ランナーが解決済みの URL を受け取ります。`restart` または `reset` の後、
+ランナーは設定されたアドレスを `open` で再び開きます。エンジンに `open` がない場合は、
+これらのフックでアプリを再起動してください。
+
+## ライフサイクル
+
+| フック | タイミング | 用途 |
+| --- | --- | --- |
+| `prepare` | 実行するテストがある実行で、ターゲットごとに 1 回、ランナーのプロセス内で | ランタイムをインストールします。返した `env` はすべてのワーカーに渡されます |
+| `init` | ワーカーごとに 1 回、最初の試行の前に | デバイスを起動します。破棄済みのエンジンでも動作する必要があります |
+| `startAttempt` | 各試行の前に | テスト用の UI を作成します |
+| `settleAttempt` | 本体の後、およびティアダウンの後にもう一度 | ダイアログハンドラーなど、どのステップも await しなかったテストコールバックのエラーを投げます |
+| `endAttempt` | 各試行の後、開始に失敗した場合も | テスト用の UI を後片付けします。冪等にしてください |
+| `dispose` | ワーカーの終了時、`init` が一度も実行されなかった場合も | ワーカーのリソースを解放します |
+| `finish` | ターゲットごとに 1 回、最後のワーカーがいなくなった後、`prepare` が実行された場合は常に | `prepare` が取得したものを解放します |
+
+起動するプロセスには `info.env` を使い、進捗の報告には `info.log` を使います。
+各フックの引数と予算は[エンジンリファレンス](/reference/engine#lifecycle)に記載されています。
+
+## ノードと ref
+
+`observe` は `SemanticNode` のツリーを返し、`locate` は一致するノードを返します。
+各ノードには、UI が存在する間は一意であり続ける ID を付けてください。リビジョンの割り当てと
+古さのチェックはランナーが行います。
+
+- ルートの ID は観察をまたいで安定させてください。エージェントの `scroll` と
+  `screen.swipe()` は `perform(root, { kind: 'swipe' })` を呼び出します。ほかのノードに対する
+  スワイプは、そのノードの内部をスクロールします。
+- `perform` が `{ id, revision }` を受け取ったら、その ID を検索します。ノードがもう存在しない
+  場合は `NODE_STALE` を投げてください。
+- `locate` が読み取っている最中に一致したものが UI から消えた場合は、リトライ可能な
+  `NODE_STALE` を投げてください。消えたものから読み取ったノードは決して返さないでください。
+  削除された要素にはサイズがないため、置き換わった要素が画面上にあるのに `toBeHidden` が
+  成功してしまいます。ランナーは呼び出し元の期限内で再度解決します。
+- プラットフォームが際限のないツリーを返しうる場合はスナップショットのサイズを制限し、
+  制限によってノードが切り捨てられたときは `truncated` を設定してください。
+- ノードにはプラットフォームのアクセシブルな名前を使ってください。
+- テスト用の識別子は `testId` に入れてください。ドキュメントの属性、iOS の
+  accessibility identifier、Android の resource id、またはデスクトップの automation
+  id です。`testId` のクエリはそのフィールドにのみ一致します。
+
+観察結果の任意の `location`（URL や画面のタイトルなど）は、モデルとレポートに渡され、
+リプレイキャッシュのエントリーの基準になります。
+
+## キーボード
+
+エージェントがコントロールにフォーカスした後に入力できるようにするには、`keyboard` を実装します。
+`keyboard.type` はプラットフォームのキーボード経路を通る必要があります。そうすることで、アプリは
+人が入力したときと同じキーイベントを受け取ります。ブラウザでは 1 文字ごとに `keydown`、`keypress`、
+`input`、`keyup`、デバイスではデバイスのキーボードです。キーストロークなしで値を設定する方法は
+準拠していません。
+
+- 編集可能なコントロールにフォーカスがない場合は `NOT_ACTIONABLE` を投げてください。
+- 画面上のキーボードがないプラットフォームでは `dismiss` を省いてください。
+- `locator.pressSequentially` は、`focus` アクションの後に同じフックを使います。
+
+`press` では、`Enter` や `ControlOrMeta+a` などのキーを、エクスポートされている
+`parseKey` で読み取ってください。ランナーは無効な表記を `INVALID_ARGUMENT` で拒否します。
+有効なキーをプラットフォームに対応付け、送信できないキーについては
+`UNSUPPORTED_CAPABILITY` を投げてください。[キーの文法](/reference/engine#keys)を
+参照してください。
+
+## ビジョンのみのサーフェス
+
+セマンティックツリーのない UI では、`observe` から子を持たない `root` と `pixels` を
+返します。`performAt` を実装し、その種類を `pointerActions` で宣言してください。
+
+エージェントは `tap_at` などのツールで操作し、その位置にリストされたノードがない場合、
+ランナーはその点を `performAt` に渡します。座標によるアクションは、記録されたときと同じ
+ビューポートサイズでのみリプレイされます。
+
+## シークレットを扱う
+
+シークレットの入力は、`sensitive: true` を持つ `fill` アクションとしてエンジンに届きます。
+個別のケイパビリティフラグはありません。エージェントの `type_secret` の場合、ランナーは
+すでに認証情報、観察結果、フィールドをチェックしています。テストの `fill(secret)` は
+これらの[チェック](/reference/security#secret-fills)を省略します。入力を安全に扱うか、
+`UNSUPPORTED_CAPABILITY` を投げてください。その後のスクリーンショットは、
+[安全なフィールドがマスクされた状態](/reference/security#screenshots-after-a-secret-fill)で
+引き続きモデルに渡されます。
+
+エンジンのオプションでも、エンジンがアプリに送るパスワードのようなシークレットを
+受け取れます。
+
+1. `string | Secret` を受け付けます。両者は `@e2e-dev/core/engine` の `isSecret` で
+   区別します。
+2. 各ハンドルをエンジンの `secrets` に列挙します。設定の読み込みでは、どのシークレットにも
+   ない名前は拒否されます。
+3. `startAttempt` で `context.resolveSecret(secret)` を使って値を読み取ります。
+
+ランナーは、値が解決された時点からその値をマスクします。エンコードされたヘッダーのように、
+アプリが値を別の形で目にする場合は、その形を `resolveSecret(secret, { derived })` から返すと、
+同じ名前でマスクされます。これはテキストのみを保護します。エンジンがシークレットを解決した
+セッションでも、スクリーンショットは保持されます。
+
+## 状態は認証情報である
+
+`state` のスナップショットには、Cookie やトークンが含まれることがあります。ランナーは
+実行ごとにスナップショットを暗号化し、実行、ターゲット、エンジン、アプリに紐付け、実行後に
+削除します。スナップショットを永続化、キャッシュ、ログ出力したり、エラーに含めたりしないでください。
+`restore` は、アプリの永続化された状態にマージするのではなく、全体を置き換える必要があります。
+
+## エラー
+
+[エンジンリファレンス](/reference/engine)にあるコードを指定して `EngineError` を
+投げてください。
+
+- リトライ可能にできるのは `NODE_STALE` と `FRAME_NOT_FOUND` だけです。
+- アクションがすでに効果を発揮した可能性がある場合は `ACTION_MAY_HAVE_COMMITTED` を使ってください。
+  ランナーはそのアクションを繰り返しません。
+- `INVALID_STATE` は `APP_NOT_OPEN` になり、`UNSUPPORTED_CAPABILITY` は
+  設定エラーになります。
+- 不明なエラーはインフラストラクチャの失敗になります。
+
+## 提供フィクスチャ
+
+エンジンは `browser` や `device` のようなフィクスチャを提供できます。それらのメソッドを
+`context.fixture` でラップすると、各呼び出しが独自のアーティファクトと失敗を持つ
+`<fixture>.<method>` ステップとして記録されます。フィクスチャは、テストと並んでランナーの
+プロセス内で実行されます。エンジンサーバーは `connectEngine` からフィクスチャを受け取ります。
+[ホスト側の処理をクライアントに残す](/engine-servers#keep-host-work-on-the-client)を参照してください。
+
+```ts
+fixtures: {
+  device: (context) => context.fixture('device', {
+    async setNetwork(state: 'online' | 'offline') { await client.network(state); },
+    async home() { await client.home(); },
+  }, {
+    setNetwork: { kind: 'resource', label: (state) => state },
+    home: { kind: 'resource' },
+  }),
+},
+```
+
+```ts title="tests/fixtures.ts"
+import { test as base } from 'e2e';
+import type { Device } from 'e2e-engine-hyperdrive';
+
+export const test = base.extend<{ device: Device }>();
+```
+
+フィクスチャのコンテキストは、URL ポリシーのチェック、タイムアウト、予算、
+アーティファクト、そして `expect(fixture)` 用の `expectable(target, factory)` のような
+ロケーターとアサーションのファクトリーも提供します。
+[エンジンリファレンス](/reference/engine#contributed-fixtures)を参照してください。
+
+## ツールパックを配布する
+
+アクションセットにないプラットフォームの操作については、`@e2e-dev/mobile/tools` のように、
+`defineTool` で作成した[プロジェクトツール](/tools)を配布してください。`platforms` を設定すると、
+各ツールは互換性のあるターゲットでのみ表示されます。
+
+## 名前で開く
+
+エンジンのファクトリーをパッケージのデフォルトエクスポートとしてエクスポートします。そうすると、
+コーディングエージェントは、設定のないディレクトリでそのエンジンの
+[MCP セッション](/reference/mcp#without-a-config)を開けます。
+
+```ts title="src/index.ts"
+export default function kiosk(options?: KioskOptions) {
+  return defineEngine({ /* ... */ });
+}
+```
+
+```txt
+open_session {engine: {package: "kiosk-engine", options: {lane: 2}}}
+```
+
+ファクトリーは `options` を受け取ります。エージェントがパッケージ名だけを渡した場合は
+`undefined` を受け取ります。各セッションが専用のエンジンを持てるように、呼び出しのたびに
+新しいエンジンを返してください。
+
+## 検証する
+
+エンジンに対してテストファイルを実行します。ライフサイクルの順序、観察結果、アクション、
+エラー、サポートされていないケイパビリティをチェックしてください。
+[`engine-contract.test.ts`](https://github.com/e2e-inc/e2e/blob/main/packages/e2e/tests/integration/engine-contract.test.ts)
+に、これらのチェックの例があります。
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="エンジン契約" icon="gear" href="/reference/engine">
+    `e2e/engine` のすべての型とフック。
+  </Card>
+  <Card title="モバイルエンジンリファレンス" icon="mobile-screen" href="/reference/mobile">
+    あわせて読める、完全なデバイスエンジン。
+  </Card>
+  <Card title="エンジンサーバー" icon="network-wired" href="/engine-servers">
+    エンジンを別のプロセス、マシン、言語で実行します。
+  </Card>
+</CardGroup>

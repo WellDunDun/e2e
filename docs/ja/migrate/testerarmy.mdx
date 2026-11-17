@@ -1,0 +1,209 @@
+---
+title: TesterArmy から
+description: TesterArmy の保存済みテストを、リポジトリと CI で実行される e2e のテストに変換します。
+---
+
+import { SetupPrompt } from '../../snippets/setup-prompt-card.jsx';
+
+export const migrationPrompt = `Migrate this project's TesterArmy saved tests to e2e, one group at a time. Docs: \`https://e2e.com/docs/migrate/testerarmy.md\`
+
+1. Read the migration guide above. It maps TesterArmy project settings, steps, and groups to e2e and marks what e2e does not have yet.
+2. If you have no \`testerarmy\` MCP tools, add the server with \`npx add-mcp --global --name testerarmy https://tester.army/mcp\`. If Claude Code uses a custom \`CLAUDE_CONFIG_DIR\`, run \`claude mcp add --transport http testerarmy https://tester.army/mcp\` instead. Ask me to sign in and restart the session, then wait until I confirm.
+3. Call \`list_projects\` and ask me which project to migrate. Read it with \`get_project\`, \`list_project_environments\`, \`list_project_credentials\`, \`list_project_memories\`, \`list_project_files\`, \`list_groups\`, and \`list_tests\`. Use only read tools. Never create, update, delete, or run anything in TesterArmy.
+4. If the project has no e2e config (\`e2e.config.ts\`, \`.mts\`, \`.js\`, or \`.mjs\`), run \`npx e2e init --yes\` (or the pnpm or bun equivalent), with \`--engine mobile\` for a mobile project. Rewrite \`tests/example.e2e.ts\` for the app or delete it.
+5. Read the e2e skill (\`npx e2e guide\` prints it, \`npx e2e guide <topic>\` prints a topic) and follow it for every step below.
+6. If you ran init, ask me which model to use for agent steps: a ChatGPT, GitHub Copilot, OpenCode Console, or SuperGrok subscription, an API key, or a local model. Configure it with its provider package. If it needs a sign-in, give me the \`npx e2e login\` command and wait until I confirm.
+7. Port the project into the e2e config with the guide's "Port the project" table. TesterArmy never returns passwords. Name each credential in \`credentials\`, read its password from an environment variable, and ask me to set it.
+8. List the groups and their tests, and ask me which group to move first. Suggest a small one, or the one with the preparation test the others need.
+9. For each test, read it with \`get_test\` and write a \`.e2e.ts\` file under \`tests/\`, one awaited call per enabled step, with the guide's "Map each step" table. Turn a preparation or login test into a \`test.setup\` that saves a session. Where a step, credential, or project setting is listed under "What e2e doesn't have yet", use the workaround in its row ("Use today" or "Use instead"). When the row has none, leave that test in TesterArmy and tell me why.
+10. After the last \`agent.assert\` of each test, add a locator assertion on the same end state when a label or test id names it.
+11. Run the new files with \`npx e2e run <file>\` and fix them until they pass. Keep the TesterArmy tests until I confirm they can go.
+12. Summarize which tests moved, which stayed in TesterArmy, and why.`;
+
+TesterArmy の保存済みテストは、QA エージェントが TesterArmy のクラウドで実行する、
+平易な言葉で書かれたステップのリストです。e2e では、各ステップは自分のマシンや CI で実行される
+TypeScript のテストの 1 行になります。`agent.act` または `agent.assert` の呼び出しか、
+判断を必要としないステップであればロケーターの呼び出しです。
+コーディングエージェントは TesterArmy の MCP サーバーを通じてプロジェクトとテストを読み取り、
+e2e のテストを書きます。
+
+<SetupPrompt>
+
+<Prompt description={migrationPrompt} children={migrationPrompt} actions={["copy", "cursor"]} />
+
+</SetupPrompt>
+
+複数のセッションにまたがる移行では、[`migrate-to-e2e` スキル](/coding-agents#migrate-an-existing-suite) が移行済みのものを進捗ファイルに記録し、各テストを廃止するまで TesterArmy のテストを残しておきます。
+
+## TesterArmy の MCP サーバーに接続する
+
+コーディングエージェントは、`https://tester.army/mcp` のホスト型サーバーからテストを読み取ります。
+自分のマシンのコーディングエージェントにこのサーバーを追加します。
+
+<CodeGroup>
+```bash npm
+npx add-mcp --global --name testerarmy https://tester.army/mcp
+```
+
+```bash pnpm
+pnpm dlx add-mcp --global --name testerarmy https://tester.army/mcp
+```
+
+```bash bun
+bunx add-mcp --global --name testerarmy https://tester.army/mcp
+```
+</CodeGroup>
+
+`add-mcp` は Claude Code のエントリーを `~/.claude.json` に書き込みます。
+`CLAUDE_CONFIG_DIR` を設定している場合は、代わりに
+`claude mcp add --transport http testerarmy https://tester.army/mcp` を実行してください。
+クライアントに求められたらサインインします。サーバーを追加するその他の方法は
+[TesterArmy の MCP セットアップ](https://tester.army/docs/cli/mcp) にあります。
+
+移行では TesterArmy から読み取るだけです。TesterArmy 上のテストを編集、削除、
+実行することは一切ありません。
+
+## プロジェクトを移植する
+
+<Note>[クイックスタート](/quickstart) で e2e をインストールし、モデルを設定してください。エージェントの呼び出しにはモデルが必要です。</Note>
+
+| TesterArmy | e2e |
+| --- | --- |
+| Web プロジェクトの `url` | `web()` ターゲットの `app: { url }` |
+| モバイルプロジェクトとアップロード済みのビルド | `app: { bundleId, appPath }` を指定した `mobile({ platform })` ターゲット。アプリは自分でビルドし、`device.installApp()` でインストールします。[モバイル](/mobile) を参照 |
+| 静的な環境（Staging、QA） | 環境ごとに 1 つのターゲットを用意し、それぞれに独自の `app.url` を指定します。`--target staging` で 1 つを実行します |
+| PR のプレビュー環境 | `app.url` をプレビューの URL に設定する CI のジョブ。[保護されたプレビュー](/web#protected-previews) を参照 |
+| `login` クレデンシャル | `credentials` のエントリー。TesterArmy はパスワードや TOTP のシークレットを返さないため、環境変数から読み取ります。[認証](/authentication#credentials) を参照 |
+| クレデンシャルの `totpSecret` | コードを計算する関数を値とする `secrets` のエントリー。e2e には TOTP の生成機能が含まれていないため、TOTP のライブラリを追加します |
+| クレデンシャルの環境ごとの上書き | 1 つの `credentials` のエントリーと、環境ごとに設定する `E2E_USER_<NAME>_PASSWORD`。[実行ごとに値を上書きする](/authentication#override-a-value-per-run) を参照 |
+| `agentInstructions` | エージェントの `system`。[指示と語彙](/agents#instructions-and-vocabulary) を参照 |
+| メモリー | エージェントの `context` |
+| プロジェクトのファイル | `tests/fixtures/receipt.jpg` のような、リポジトリ内のファイル |
+| テストの `viewport` 設定 | `web({ viewport: { width, height } })`。サイズごとに 1 つのターゲット |
+| PR のテスト | 各プルリクエストで実行する e2e のジョブと、コメント用の [GitHub レポーター](/github) |
+| グループのスケジュール | スケジュール実行される CI のワークフロー |
+
+## テストを 1 つ書き直す
+
+各ステップは await する 1 つの呼び出しになります。`login` ステップは、1 回だけサインインして
+セッションを保存するセットアップテストになります。
+
+```json title="TesterArmy (get_test)"
+{
+  "title": "Creates a project",
+  "steps": [
+    { "type": "login", "title": "Log in as the admin" },
+    { "type": "act", "title": "Open Projects from the sidebar and click New Project" },
+    { "type": "act", "title": "Name the project Apollo and save" },
+    { "type": "assert", "title": "Apollo appears in the project list" }
+  ]
+}
+```
+
+<Tabs>
+  <Tab title="tests/projects.e2e.ts">
+
+```ts
+import { test } from '@e2e-dev/web';
+import { expect } from 'e2e';
+
+test('creates a project', { session: 'admin' }, async ({ app, agent, screen }) => {
+  await app.open('/');
+  await agent.act('open Projects from the sidebar and click New Project');
+  await agent.act('name the project {name} and save', { params: { name: 'Apollo' } });
+  await agent.assert('Apollo appears in the project list');
+  await expect(screen.getByText('Apollo')).toBeVisible();
+});
+```
+
+  </Tab>
+  <Tab title="tests/auth.setup.e2e.ts">
+
+```ts
+import { test } from '@e2e-dev/web';
+import { credentials } from 'e2e';
+
+test.setup('log in as the admin', { sessions: ['admin'] }, async ({ app, agent, session }) => {
+  const admin = credentials.user('admin');
+
+  await app.open('/login');
+  await agent.act('log in', { params: { username: admin.username, password: admin.password } });
+  await agent.assert('the dashboard is shown');
+  await session.save('admin');
+});
+```
+
+  </Tab>
+</Tabs>
+
+TesterArmy は最初のステップの前にプロジェクトの URL を開きます。e2e では何も自動では
+開かないため、各テストは `app.open()` から始めます。
+
+## 各ステップを対応付ける
+
+| TesterArmy | e2e |
+| --- | --- |
+| `act` ステップ | `agent.act('...')`。ステップが既知のルートを開く場合や、名前の付いた 1 つのコントロールを操作する場合はロケーターの呼び出し |
+| `assert` ステップ | `agent.assert('...')`。ラベルやテスト ID で終了状態を特定できる場合は、続けてロケーターのアサーション |
+| `login` ステップ | サインインして `session.save()` を呼び出す `test.setup` と、各テストの `{ session }`。[認証](/authentication) を参照 |
+| Web での `files` ステップ、ステップ内の `@receipt.jpg` | ゴールにファイルのリポジトリ内パスを書きます: `agent.act('attach tests/fixtures/receipt.jpg')`。または `locator.setInputFiles()` |
+| `screenshot` ステップ | `app.screenshot('label')` |
+| `javascript` ステップ | `browser.evaluate()`。失敗するのはコードが例外を投げたときだけなので、`{ success: false }` の戻り値は `expect` で確認します |
+| `disabled: true` のステップ | 省略します |
+| 無効化されたテスト | `test.skip` |
+| グループ | `tags` を付けた `describe`。`npx e2e run --tag <tag>` で実行します |
+| グループの `runMode: sequential` | グループの `{ serial: true }` |
+| グループの `maxConcurrentRuns` | 設定の `workers`。1 つのグループではなく、実行全体を制限します |
+| グループの `prepTestId` | セッションを保存する `test.setup` と、グループの `{ session }` |
+| `run_test`, `run_group` | `npx e2e run <file>`、`npx e2e run --tag <tag>` |
+
+画面を読み取って判断するステップ、複数の画面にまたがるステップ、安定したコントロールを
+指していないステップには、エージェントを使い続けてください。ステップをロケーターに置き換える前に、
+コントロールの正確な名前を調べ、同じ終了状態を確認してください。
+
+## e2e にまだないもの
+
+「予定あり」はロードマップに載っているものです。「未定」は時期が決まっていないものです。「予定なし」は
+意図的に含めていないものです。回避策を使うか、テストを TesterArmy に残してください。
+
+### 予定あり
+
+| TesterArmy | 現時点での回避策 |
+| --- | --- |
+| `inbox` クレデンシャル、`temporaryEmail` を使う `login` | [フィクスチャ](/fixtures) から独自のテスト用受信箱を呼び出します |
+| モバイルでの `files` ステップ（フォトライブラリ） | iOS シミュレーターでは、`app.open()` の前に `xcrun simctl addmedia` を実行し、システムのピッカーで写真を選びます。Android は未検証です。[device フィクスチャ](/mobile#the-device-fixture) の「Photos for a picker test」を参照 |
+| `accessibilityAuditEnabled` | - |
+
+### 未定
+
+| TesterArmy | 現時点での回避策 |
+| --- | --- |
+| `microphone` ステップ | - |
+
+### 予定なし
+
+| TesterArmy | 代わりに使うもの |
+| --- | --- |
+| `browserRegion`, `simulatorRegion` | ブラウザは `e2e run` を実行した場所、または [ホスト型プロバイダー](/integrations) 上で実行されます |
+| `webSearchEnabled` | エージェントが知っておくべきことを、エージェントの `context` に入れます |
+
+## 意図的に異なる点
+
+- テストは TesterArmy のクラウドではなく、自分のマシンや CI で実行されます。
+  アプリの URL とデバイスは自分で選びます。
+- モデルがパスワードを見ることはありません。ランナーがハンドルからパスワードを入力します。
+  [認証](/authentication#the-password-is-a-handle) を参照してください。
+- `agent.act` のステップは、記録されたアクションをモデルを呼び出さずにリプレイします。
+  画面が一致しなくなると、エージェントが処理を引き継ぎます。
+  [リプレイキャッシュ](/cache) を参照してください。
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="エージェントステップ" icon="wand-magic-sparkles" href="/agent-steps">
+    モデルが見るもの、モデルにできること、そしてステップの終わり方。
+  </Card>
+  <Card title="認証" icon="key" href="/authentication">
+    セッション、クレデンシャル、そしてモデルが一切見ることのないシークレット。
+  </Card>
+</CardGroup>

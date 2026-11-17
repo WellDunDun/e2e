@@ -1,0 +1,1915 @@
+---
+title: E2EConfig
+description: すべての設定キーと、そのデフォルト値、有効な範囲、および環境変数。
+"og:image": "https://e2e.com/docs/images/og/reference/config.png?v=6c4dead1fc"
+"twitter:image": "https://e2e.com/docs/images/og/reference/config.png?v=6c4dead1fc"
+---
+
+`e2e.config.ts` はランナーを設定します。テストを実行するターゲット、各ターゲットがテストするアプリ、エージェント、リプレイキャッシュを指定します。
+`satisfies E2EConfig` を付けたオブジェクトを export してください。これにより形が検査され、推論された型も保たれます。
+ランナーは読み込み時に設定を再度検証し、範囲や TypeScript では検査できないルールもチェックします。
+多くのプロジェクトで変更するオプションについては、[プロジェクトを設定する](/quickstart#configure-the-project) を参照してください。
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+
+export default {
+  targets: [
+    {
+      name: 'web',
+      engine: web({ browser: 'chromium' }),
+      app: { url: process.env.APP_URL ?? 'http://localhost:3000' },
+    },
+  ],
+} satisfies E2EConfig;
+```
+
+## リファレンス
+
+### トップレベル
+
+| オプション | 型 | デフォルト |
+| --- | --- | --- |
+| [`projectId`](#projectid) | `string` | `package.json` の name |
+| [`targets`](#targets) | `Target[]` | 必須 |
+| [`tests`](#tests) | `string \| string[]` | `'tests/**/*.e2e.ts'` |
+| [`timeout`](#timeout) | `number` | `120000` |
+| [`launchTimeout`](#launchtimeout) | `number` | `60000` |
+| [`actionTimeout`](#actiontimeout) | `number` | `30000` |
+| [`assertionTimeout`](#assertiontimeout) | `number` | `5000` |
+| [`cleanupTimeout`](#cleanuptimeout) | `number` | `30000` |
+| [`retries`](#retries) | `number` | `0`、CI では `1` |
+| [`failOnSkippedFailure`](#failonskippedfailure) | `boolean` | `false` |
+| [`maxDuration`](#maxduration) | `number` | - |
+| [`workers`](#workers) | `number` | コア数の半分、CI では `1` |
+| [`reporters`](#reporters) | `(BuiltinReporter \| Reporter)[]` | `['list']` |
+| [`output`](#output) | `string` | `'.e2e'` |
+| [`artifacts`](#artifacts) | `ArtifactsConfig` | ローカルのみ |
+| [`trace`](#trace) | `RecordingMode` | `'retain-on-failure'` |
+| [`video`](#video) | `RecordingMode` | `'off'` |
+| [`agents`](#agents) | `Record<string, AgentConfig>` | `default`、モデルなし |
+| [`filters`](#filters) | `TestFilter[]` | - |
+| [`cache`](#cache) | `CacheMode \| CacheConfig` | `'read-write'`、CI では `'read-only'` |
+| [`credentials`](#credentials) | `Record<string, CredentialConfig>` | - |
+| [`secrets`](#secrets) | `Record<string, SecretConfig>` | - |
+
+完全な宣言は [`E2EConfig`](#e2econfig) にあります。
+
+- どの階層でも未知のキーは `INVALID_CONFIG` になります。トップレベルの
+  `app` キーはありません。各ターゲットが[テスト対象のアプリ](#the-app-under-test)を宣言します。
+- 数値はすべて安全な整数（safe integer）でなければなりません。
+- ミリ秒単位のタイムアウトは、ここでも `app.command` や `agents` でも、すべて
+  最大 2147483647（約 24 日）です。それより大きい値は `INVALID_CONFIG` になります。
+- 省略可能なキーには値を指定するか、キー自体を省略します。
+  `exactOptionalPropertyTypes` の下では `undefined` は型エラーになるため、
+  `store: process.env.CACHE_URL && createStore(...)` はコンパイルに失敗します。
+  実行時には `undefined` は未設定として扱われます。
+- ターゲットの `app` フィールドは型上も `undefined` を受け付けるため、
+  `process.env` を直接読み取れます。環境に依存するそれ以外のキーは、値があるときだけ
+  スプレッドで追加してください。
+
+```ts
+export default {
+  targets: [{ engine: web(), app: { url: 'http://localhost:3000' } }],
+  ...(process.env.CACHE_URL === undefined ? {} : { cache: { store: createStore(process.env.CACHE_URL) } }),
+} satisfies E2EConfig;
+```
+
+#### `projectId`
+
+プロジェクトの安定した ID です。
+
+```ts
+projectId: 'acme-web', // default: the root package.json name
+```
+
+- 1 文字から 256 文字です。
+- ルートの `package.json` に `name` がない場合は、
+  `unportable-<sha256 of the project root, 32 hex>` にフォールバックします。
+
+#### `tests`
+
+テストファイルの glob で、プロジェクトルートからの相対パスです。
+
+```ts
+tests: ['tests/**/*.e2e.ts', '!tests/wip/**'], // default: 'tests/**/*.e2e.ts'
+```
+
+- glob では `*`、`?`、およびセグメント全体としての `**` を使えます。`?` は Unicode の
+  コードポイント 1 つ（絵文字を含む）にマッチします。
+- `!` で始まるエントリは除外を表します。この例では `tests/wip/` 配下を除く
+  すべてのテストファイルを選択します。
+- ファイルは、それにマッチする包含 glob があり、かつどの除外にもマッチしないときに
+  選択されます。リストの順序は関係ありません。
+- 探索はマッチする可能性のあるディレクトリだけを訪れます。除外によって丸ごと
+  外されるディレクトリには入らず、`node_modules` をスキップし、シンボリックリンクは
+  無視します。
+- ドットで始まるディレクトリは、glob のセグメントがドットで始まる場合にのみ含まれます。
+- デフォルトは TypeScript のみを選択します。JavaScript のテストには
+  `'tests/**/*.e2e.js'` を設定してください（[JavaScript](#javascript)）。
+
+| スローされるエラー | 条件 |
+| --- | --- |
+| `INVALID_CONFIG` | リストに除外しか含まれていない。 |
+| `INVALID_GLOB` | ワイルドカードを含まないエントリがディレクトリを指している（`'!tests/wip'`）。glob はファイルを指定するものです。エラーには書くべき glob（`'!tests/wip/**'`）が示されます。 |
+| `NO_TESTS` | `e2e run` に渡したファイルが除外によって外された。エラーにはそのエントリが示されます。 |
+
+#### `timeout`
+
+1 回のテスト試行の期限（ミリ秒）です。
+
+```ts
+timeout: 180_000, // default: 120000
+```
+
+#### `launchTimeout`
+
+エンジンの初期化と試行開始にかけられる時間（ミリ秒）です。
+
+```ts
+launchTimeout: 90_000, // default: 60000
+```
+
+#### `actionTimeout`
+
+エンジンの各操作にかけられる時間（ミリ秒）です。
+
+```ts
+actionTimeout: 10_000, // default: 30000
+```
+
+- ターゲットを指定したエージェントのアクションは、`actionTimeout` と 15 秒のうち小さいほうで制限されます。
+- 呼び出し自体の `timeout` オプションがこれより優先されます。`timeout: 0` を指定すると
+  その呼び出しには期限が設定されませんが、テストのタイムアウト、または `afterEach` 内では
+  `cleanupTimeout` による制限は引き続き適用されます。
+- `--action-timeout <ms>` で 1 回の実行に限り上書きできます。
+
+#### `assertionTimeout`
+
+`expect` のデフォルトの期限（ミリ秒）です。
+
+```ts
+assertionTimeout: 10_000, // default: 5000
+```
+
+- マッチャー自体の `timeout` オプションがこれより優先されます。`timeout: 0` を指定すると
+  そのマッチャーには期限が設定されませんが、テストのタイムアウト、または `afterEach` 内では
+  `cleanupTimeout` による制限は引き続き適用されます。
+- `--assertion-timeout <ms>` で 1 回の実行に限り上書きできます。
+
+#### `cleanupTimeout`
+
+各 `afterEach` フック、フィクスチャのティアダウン、エンジンのクリーンアップにかけられる
+時間（ミリ秒）です。
+
+```ts
+cleanupTimeout: 60_000, // default: 30000
+```
+
+#### `retries`
+
+テストごとのリトライ回数です。
+
+```ts
+retries: 2, // default: 1 in CI, else 0
+```
+
+- 0 から 10 までです。
+
+#### `failOnSkippedFailure`
+
+テストが、以前の試行の失敗後にリトライをスキップした場合に、終了コード 1 で実行を
+失敗させます。
+
+```ts
+failOnSkippedFailure: true, // default: false
+```
+
+- テストの `skipped` ステータスと理由はそのまま保たれます。
+- その失敗はレポートに残り、どちらの設定でも CLI は
+  `Skipped After Failure` の下にそれらを表示します。
+- 失敗のないスキップ、成功したリトライ、エンジンのクリーンアップ診断ではトリガーされません。
+
+<Note>
+`expect.soft` が失敗した後のスキップには、オプションは不要です。その場合は
+[試行が失敗します](/reference/test#members)。
+</Note>
+
+#### `maxDuration`
+
+テストの実行にかけられる実時間（ミリ秒）です。時間がかかりすぎる実行を停止します。
+
+```ts
+export default { targets, maxDuration: 900_000 } satisfies E2EConfig; // default: none
+```
+
+- 最大 2147483647（約 24 日）です。
+- 時間の計測はテストの開始時に始まります。アプリの起動は、代わりにアプリコマンドの
+  [`startupTimeout`](#command) で制限されます。
+- 時間を使い切ると、ランナーはそれ以上何もディスパッチしません。実行中のテストは
+  `interrupted` として終了し、開始されていないテストは原因 `time-limit` でスキップされます。
+  実行には `RUN_TIMEOUT` エラーが記録され、終了コード 1 で終了します。
+- 次に `--last-failed` を使うと、中断されたテストとスキップされたテストが実行されます。
+- `--max-duration <ms>` で 1 回の実行に限り上書きできます。
+- `e2e explore` はこれを無視し、独自の `--timeout` を使います。
+
+#### `workers`
+
+並列ワーカー数です。
+
+```ts
+workers: 4, // default: 1 in CI, else half the cores
+```
+
+- 1 から 1024 までです。
+- ローカルでのデフォルトは `max(1, floor(availableParallelism() / 2))` です。
+- エンジンがこれより低い上限を設けることがあります。`workers` は、ターゲットのエンジンが
+  宣言する値を超えることはありません。
+- ワーカーが複数ある場合、各ターゲットのファイルは
+  [タイミング履歴](/ci#cache-the-timings-history)に基づいて時間の長いものから開始されます。
+  時間の記録がないファイルは、記録のあるファイルより先に開始されます。`--changed-since` を
+  指定した場合は、[失敗しそうなものから開始する](/filters#start-the-likeliest-first) で
+  説明しているとおり、失敗の可能性が最も高いファイルがさらにその前に開始されます。
+
+#### `reporters`
+
+出力レンダラーとレポーターオブジェクトです。
+
+```ts
+reporters: ['list', 'junit'], // default: ['list']
+```
+
+| 値 | 動作 |
+| --- | --- |
+| `'list'` | ターミナルに進捗、失敗、実行サマリーを表示します。 |
+| `'junit'` | `<output>/junit.xml` を書き出します。 |
+| `'markdown'` | `<output>/summary.md` を書き出します。 |
+| `'json'` | レポートを出力します。`list` とは併用できず、両方を指定すると `INVALID_CONFIG` になります。 |
+| `Reporter` オブジェクト | 組み込みのレポーターと並行して実行されます。`--reporter` で削除されることはありません。 |
+
+未知の ID は `INVALID_CONFIG` になります。[レポーター](/reference/reporters) を参照してください。
+
+### targets
+
+ターゲットとは、テストを実行する名前付きのサーフェス 1 つのことで、テスト対象のアプリと
+それを操作する [エンジン](#engine) から成ります。`targets` は必須で、少なくとも 1 つ
+含める必要があります。
+
+```ts title="e2e.config.ts"
+targets: [
+  { name: 'chromium', engine: web(), app: { url: 'http://localhost:3000' } },
+  { name: 'firefox', engine: web({ browser: 'firefox' }), app: { url: 'http://localhost:3000' } },
+],
+```
+
+| オプション | 型 | デフォルト |
+| --- | --- | --- |
+| [`name`](#name) | `string` | プラットフォーム |
+| [`platform`](#platform) | `string` | エンジンのプラットフォーム |
+| [`engine`](#engine) | `EngineHandle` | - |
+| [`app`](#the-app-under-test) | `TargetApp` | - |
+| [`trace`](#trace) | `RecordingMode` | 設定の `trace` |
+| [`video`](#video) | `RecordingMode` | 設定の `video` |
+
+- `{ engine: web(), app: { url } }` だけで完全なターゲットになります。
+- `requires` にターゲットが持たない機能を指定したテストは、そのターゲットではスキップされます。
+  選択されたテストが依存する `test.setup` はそのターゲットで実行可能でなければならず、
+  そうでない場合は選択が `COLLECTION_ERROR` で失敗します。
+
+完全な宣言は [`Target`](#target) にあります。
+
+#### `name`
+
+`--target`、レポート、セッション、アーティファクトのパスで使われる ID です。
+
+```ts
+name: 'chromium', // default: the platform
+```
+
+- ASCII の英字、数字、`_`、`-`、`.` を使えますが、ドットだけの名前は使えません
+  （`.` と `..` はパスのセグメントになるため）。
+- ターゲット間で一意である必要があります。同じプラットフォームのターゲットが 2 つある場合は
+  名前が必要です。
+
+#### `platform`
+
+プラットフォームのラベルです。
+
+```ts
+platform: 'web', // default: inherited from the engine
+```
+
+- エンジンのないターゲットでは必須です。
+- ターゲットとエンジンの両方がプラットフォームを指定する場合、両者は一致している必要があります。
+
+#### `engine`
+
+サーフェスを操作するエンジンです。`web(...)`、`mobile(...)`、または任意の
+`defineEngine` ハンドルを指定します。
+
+```ts
+engine: web({ browser: 'firefox' }),
+```
+
+エンジンのないターゲットは、エージェントツールのみで実行されます。`app` があって
+エンジンがないターゲットは `INVALID_CONFIG` になります。
+
+### テスト対象のアプリ
+
+ターゲットはテスト対象のアプリを `app` で宣言します。エンジンはそれを操作するだけです。
+ブラウザのターゲットは開く URL を指定し、デバイスのターゲットはインストール済みのアプリか
+起動するビルドを指定します。ランナーは設定の読み込み時に `app` を解決します。
+
+```ts title="e2e.config.ts"
+targets: [
+  {
+    name: 'web',
+    engine: web({ viewport: { width: 1440, height: 900 } }),
+    app: {
+      url: 'http://localhost:3000',
+      command: { executable: 'npm', args: ['run', 'dev'] },
+      readyUrl: 'http://localhost:3000/health',
+    },
+  },
+  {
+    name: 'ios',
+    engine: mobile({ platform: 'ios' }),
+    app: {
+      bundleId: 'com.example.app',
+      appPath: './build/App.app',
+      launchArguments: ['-e2e', 'YES'],
+      permissions: { camera: 'grant' },
+    },
+  },
+],
+```
+
+| オプション | 型 | デフォルト |
+| --- | --- | --- |
+| [`url`](#url) | `string` | - |
+| [`bundleId`](#bundleid) | `string` | - |
+| [`appPath`](#apppath) | `string` | - |
+| [`linkBase`](#linkbase) | `string` | - |
+| [`identity`](#identity) | `string` | アプリから導出 |
+| [`environment`](#environment) | `'test' \| 'staging' \| 'production'` | `'test'` または `'production'` |
+| [`launchArguments`](#launcharguments) | `string[]` | - |
+| [`permissions`](#permissions) | `Record<string, AppPermissionState>` | - |
+| [`command`](#command) | `CommandConfig` | - |
+| [`readyUrl`](#readyurl) | `string` | `url` |
+
+各エンジンは設定の読み込み時にキーを検査し、問題があればターゲット名を示す `INVALID_CONFIG`
+を返します。`app` を持つターゲットには [エンジン](#engine) が必要です。
+
+- `web()` のターゲットには `app.url` が必要で、`bundleId`、`appPath`、
+  `launchArguments` は受け付けません。
+- `mobile()` のターゲットには `app.bundleId` または `app.appPath` が必要です。
+  モバイルのターゲットでの `app.url` はまだサポートされていません。
+- `app.linkBase` には、`mobile()` のようにリンクを開けるエンジンが必要です。
+- `app` または `app.command` 内の未知のキーは、候補（did-you-mean）付きで失敗します。
+
+<Note>
+古い書き方は未知のキーとなり、設定の読み込み時に `INVALID_CONFIG` で失敗します。
+対象は `web({ url })` とその他の `web()` および `mobile()` のアプリオプション、
+`mobile({ app })`（現在は `app.bundleId`）、ターゲットに直接書いたアプリのキー、
+トップレベルの `app` や `url`、そしてあらゆる場所の [`services`](#services) です。
+</Note>
+
+#### `url`
+
+ベース URL です。`app.open()` はこれを開き、相対的なナビゲーションはこれを基準に
+解決されます。
+
+```ts
+url: 'http://localhost:3000',
+```
+
+- WHATWG に従って正規化されます。userinfo、クエリ、フラグメントは含められません。
+- スキームがない場合は `https://` になり、ループバックホストでは `http://` になります。
+- 平文の HTTP はループバックホストでのみ受け付けます。
+- `127.0.0.1` または `[::1]` でのポート `0` は[空きポート](#free-ports)を要求します。
+- そのオリジンがエンジンのリクエスト認証情報のスコープになり、そのサイトが観測対象の
+  フレームのスコープになります。[アプリのサイト](#the-apps-site) を参照してください。
+
+| スローされるエラー | 条件 |
+| --- | --- |
+| `INVALID_APP_URL` | `127.0.0.1` または `[::1]` 以外のホスト（`localhost` を含む）でのポート `0`。 |
+| `INVALID_CONFIG` | ポート 0 の `url` で、そこで起動するものがない（`app.command` がない）。 |
+
+#### `bundleId`
+
+デバイスが起動するインストール済みのアプリです。バンドル ID、Android のパッケージ名、
+またはデバイスが解決する表示名（`Settings`）を指定します。
+
+```ts
+bundleId: 'com.example.app',
+```
+
+リンクを指定すると `INVALID_CONFIG` になります。リンクはテストで `device.openLink` を使って開きます。
+
+#### `appPath`
+
+スイートの実行対象となるビルドで、iOS の `.app` バンドルまたは Android の `.apk` です。
+プロジェクトルートを基準に解決されます。
+
+```ts
+appPath: './build/App.app',
+```
+
+`bundleId` がない場合は、このビルドがインストールするアプリが起動されます。
+インストールされるタイミングについては [デバイスエンジン](/reference/mobile#engine) を
+参照してください。
+
+#### `linkBase`
+
+デバイスのターゲットで `app.open(path)` が開く場所です。パスがリンクベースに結合され、
+そのリンクが固定されたアプリで開かれます。
+
+```ts
+linkBase: 'https://shop.example.com', // app.open('/orders/42') opens https://shop.example.com/orders/42
+linkBase: 'shopapp://', // app.open('/orders/42') opens shopapp://orders/42
+```
+
+- ベースとパスはスラッシュ 1 つで結合されます。スキームだけのベース（`shopapp://`）の後には
+  スラッシュは付きません。
+- `app.open` に渡した絶対リンクは、カスタムアプリスキームを含めてそのまま開かれます。
+  `file:`、`data:`、`javascript:`、`view-source:`、`blob:`、`filesystem:` のリンクは
+  `POLICY_DENIED` になります。
+- `linkBase` がない場合、デバイスでの `app.open()` はアプリを起動するだけで、パスは
+  受け付けません（`APP_URL_REQUIRED`）。
+
+| スローされるエラー | 条件 |
+| --- | --- |
+| `INVALID_CONFIG` | エンジンがリンクを開けない（`web()` のターゲット）、値が絶対 URL でもスキームでもない、クエリまたはフラグメントを含む（空の `?` や `#` を含む）、先頭または末尾に空白がある、あるいは `file:`、`data:`、`javascript:`、`view-source:`、`blob:`、`filesystem:` を指定している。 |
+| `POLICY_DENIED` | `app.open` がこれらのスキームのいずれかを持つ絶対リンクを受け取った。 |
+
+#### `identity`
+
+リプレイキャッシュとセッションのエントリのキーとなる、安定したアイデンティティです。
+
+```ts
+identity: 'checkout-web', // default: the URL's origin and base path, else bundleId, else appPath
+```
+
+プレビュー URL やバージョン付きのビルドパスをまたいでエントリを再利用するには、
+安定した値を設定してください。[空きポート](#free-ports)を使う場合、デフォルト値は
+宣言された `:0` から導出されるため、ポートが変わってもキャッシュやセッションのエントリは
+変わりません。
+
+<Note>
+異なるアプリには異なるアイデンティティを指定する必要があります。アイデンティティを
+共有すると、アプリをまたいで記録がリプレイされてしまいます。
+</Note>
+
+#### `environment`
+
+レポートでターゲットにラベルを付け、キャッシュとセッションのアイデンティティの
+ダイジェストに含まれます。実行を制限することはありません。
+
+```ts
+environment: 'staging', // default: 'test' for a local host or no URL, else 'production'
+```
+
+- `'test'`、`'staging'`、`'production'` のいずれかです。
+- ローカルホストとは、ループバック、`.localhost`、または `.test` のホストです。
+
+#### `launchArguments`
+
+新規起動のたびにアプリに渡す引数です。対象は `app.open()`、`app.restart()`、
+`app.clearState()` です。
+
+```ts
+launchArguments: ['-e2e', 'YES'],
+```
+
+ビルドモードを選択する引数はアプリの中身を変えます。モードごとに独自の `identity` を
+指定してください。
+
+#### `permissions`
+
+アプリが保持する権限を名前で指定します。
+
+```ts
+permissions: { camera: 'grant' },
+```
+
+それぞれ `'grant'`、`'deny'`、`'reset'` のいずれかです。
+
+- `mobile()` のターゲットは、新規起動の前に毎回それぞれを設定します。
+  [permissions](/reference/mobile#engine) を参照してください。
+- `web()` のターゲットは `'grant'` のみを受け付け、試行のすべてのページに、どのオリジンでも
+  付与します。ヘッドレスの Chromium は、指定されていない権限を拒否します。
+  [ブラウザの権限を付与する](/web#granting-browser-permissions) を参照してください。
+
+| ブラウザ | 名前 |
+| --- | --- |
+| `chromium` | `accelerometer`, `ambient-light-sensor`, `background-sync`, `camera`, `clipboard-read`, `clipboard-write`, `geolocation`, `gyroscope`, `local-fonts`, `local-network-access`, `magnetometer`, `microphone`, `midi`, `midi-sysex`, `notifications`, `payment-handler`, `screen-wake-lock`, `storage-access` |
+| `firefox` | `geolocation`, `local-network-access`, `notifications`, `persistent-storage`, `push`, `screen-wake-lock` |
+| `webkit` | `camera`, `clipboard-read`, `geolocation`, `microphone`, `notifications`, `screen-wake-lock` |
+
+ブラウザプロバイダーや `connect` では `chromium` の名前を使います。エンジンは
+Lightpanda を含め、これらを CDP 経由で操作するためです。
+
+#### `command`
+
+ランナーが最初のテストの前に起動し、どの終了経路でも停止するプロセスです。
+開発サーバーや、デバッグビルド用の Metro などが該当します。
+
+```ts
+command: {
+  executable: 'pnpm',
+  args: ['dev', '--port', '{port}'],
+  inheritEnv: ['STRIPE_*'],
+  startupTimeout: 120_000, // default: 60000
+},
+```
+
+| フィールド | 例 | デフォルト |
+| --- | --- | --- |
+| `executable` | `'npm'` | 必須 |
+| `args` | `['run', 'dev']` | なし |
+| `cwd` | `'apps/web'` | プロジェクトルート |
+| `env` | `{ PORT: '{port}' }` | なし |
+| `inheritEnv` | `['STRIPE_*']` | なし |
+| `startupTimeout` | `120_000` | `60000` |
+| `shutdownTimeout` | `5_000` | `10000` |
+| `log` | `'.e2e/logs/app.log'` | 出力を破棄 |
+| `reuseExisting` | `true` | `false` |
+
+- `executable` は `PATH` を使って解決され、シェルで解釈されることはありません。
+- `args` はそのまま渡されます。`args` と `env` の値に含まれる `{port}` は、`url` の
+  ポートに展開されます。
+- `cwd` はプロジェクトルートから解決されます。
+- 子プロセスが継承するのは、`PATH`、`HOME`、一時ディレクトリ用の変数、`inheritEnv` に
+  マッチする変数、および `command.env` だけです。アプリに必要なものは明示的に渡してください。
+- `inheritEnv` には、正確な名前か、`*` で終わるプレフィックス（`'STRIPE_*'`）を指定します。
+  変数は設定されている場合にのみコピーされます。継承された値よりも `env` が優先されます。
+- `args` の各エントリと `env` の各値は文字列です。`undefined` の `env` 値は
+  取り除かれます。
+- `startupTimeout` は [`readyUrl`](#readyurl) のプローブにかけられる時間です。
+- `shutdownTimeout` は強制終了までの猶予期間です。
+- `e2e run` では、準備完了後にコマンドが終了した場合、依存するターゲットに未完了の作業があれば、実行は `APP_UNREACHABLE` で失敗します。
+  これには終了コード 0 での終了やシグナルによる終了も含まれます。
+  ランナーは、それらのターゲットについてのみ、実行中のテストを中断し、キュー内のテストをスキップします。
+  作業を終えたターゲットは、この終了を無視します。
+- `log` はプロセスの stdout と stderr を追記で受け取り、プロジェクトルートから解決されます。
+  プロジェクトルートの内側に置く必要があります。
+- `log` がある場合、起動タイムアウトやコマンドの終了時には、コマンドの起動以降に追記された
+  行が引用されます。40 行以内かつ 8 KiB 以内のログは全体が引用されます。
+  それ以外の場合、引用は両端からそれぞれ最大 20 行を残し、その間に
+  `[startup output omitted]` を挟みます。8 KiB を超えるログでは、それらの行は
+  先頭と末尾の 4 KiB から取られます。
+  ログが空または読み取れない場合は `no output in <log>` となります。
+  共有のログには、他のプロセスの行が含まれることがあります。
+  引用では、4 文字以上の `command.env` と `inheritEnv` の値が `<secret:NAME>` マーカーに置き換えられます。
+  `log` がない場合、これらのエラーは `log` の設定を促します。
+  コマンドの起動（spawn）に失敗した場合は、代わりに spawn のエラーが報告されます。
+- `reuseExisting`: コマンドの起動前に準備完了 URL がすでに応答している場合、
+  ランナーはそのプロセスを使います。何も起動せず、何も停止しません。
+  CI ではこれは通知とともに無視され、常にコマンドが起動されます。
+- 同じコマンドを宣言したターゲットは 1 つのプロセスを共有し、最初に宣言したターゲットの
+  `readyUrl` でプローブされます。
+- ランナーは、自身が起動していないプロセスを終了させることはありません。
+
+| スローされるエラー | 条件 |
+| --- | --- |
+| `INVALID_CONFIG` | `inheritEnv` に単独の `'*'` がある。 |
+| `INVALID_CONFIG` | `args` のエントリまたは `env` の値が文字列ではない（数値や `secrets.get()` ハンドルを含む）。 |
+| `INVALID_CONFIG` | `url` がポート 0 を要求するアプリに `reuseExisting` を指定した。すでに動いているプロセスは、実行が割り当てるポートでサービスを提供できません。 |
+| `APP_URL_REQUIRED` | 設定の読み込み時に、`app.url` も `app.readyUrl` もない `app.command` がある。 |
+| `APP_ALREADY_RUNNING` | `reuseExisting` なしで、`readyUrl` がすでに応答している。 |
+| `APP_UNREACHABLE` | コマンドの起動に失敗した、`log` を開けない、`startupTimeout` が切れた、準備完了前にコマンドが終了した、または `e2e run` 中に予期せず終了した。 |
+
+<Warning>
+`log` には、マスクされていない生の出力が含まれます。無視対象のディレクトリに置いてください。
+</Warning>
+
+完全な宣言は [`CommandConfig`](#commandconfig) にあります。
+
+#### `readyUrl`
+
+`command` の準備が整うまでポーリングする URL で、200〜499 のステータスで準備完了とみなします。
+
+```ts
+readyUrl: 'http://localhost:3000/health', // default: url
+```
+
+- `url` がない場合は必須です。
+- これに含まれる `{port}` は `url` のポートです。
+
+#### アプリのサイト
+
+テストやエージェントは、任意の http(s) の URL と `about:blank` を開けます。それ以外の
+スキーム（`file:`、`data:`、`javascript:`、`view-source:`、`blob:`）はすべて
+`POLICY_DENIED` になります。`url` のサイトとは、その登録可能ドメインのことです。
+`app.example.com` と `auth.example.com` は同じサイトです。サイト外の子フレームは
+観測に含まれません。
+
+ブラウザエンジンの [`headers`](/reference/web#headers) と
+[`basicAuth`](/reference/web#basicauth) は、より狭いスコープ、つまり `url` のオリジン
+（スキーム、ホスト、ポート。実行の空きポートを含む）と、指定したオリジンに限定されます。
+[リクエストの認証情報](/reference/security#request-credentials) を参照してください。
+
+#### 空きポート
+
+リテラルのループバックアドレスでポート `0` を指定した `url`（`http://127.0.0.1:0`、
+`http://[::1]:0`）は、実行に空き TCP ポートを要求します。ランナーは設定の読み込み時に
+ポートを選びます。そして、宣言でそのポートが使われていた箇所、つまりベース URL、
+デフォルトの `readyUrl`、レポートに、そのポートを代入します。コマンドは `args` または
+`env` の `{port}` を通じてポートを受け取る必要があります。
+
+```ts title="e2e.config.ts"
+engine: web(),
+app: {
+  url: 'http://127.0.0.1:0',
+  command: { executable: 'pnpm', args: ['dev', '--port', '{port}'], env: { PORT: '{port}' } },
+},
+```
+
+- `localhost:0` は [`INVALID_APP_URL`](#url) になります。コマンドがバインドするものとは
+  別のアドレスに解決される可能性があるためです。コマンドがバインドするアドレスを
+  書いてください。
+- ポート `0` を要求する各ターゲットは、それぞれ独自のポートと独自のプロセスを得ます。
+  固定ポートで同じコマンドを宣言した 2 つのターゲットは、1 つのプロセスを共有します。
+- デフォルトの [`identity`](#identity) は宣言された `:0` から導出されます。
+- テストは割り当てられた URL を [`app.baseUrl`](/reference/app) から読み取ります。
+
+#### services
+
+<Note>
+このバージョンでは依存プロセス（データベース、API モック、複数のターゲットが共有する
+開発サーバー）は起動されず、`services` はどこに書いても未知のキーになります。
+それらは実行前に起動するか、`app.command` でそれらを立ち上げてアプリを提供する
+スクリプトを起動してください。services API は今後のリリースで復活します。
+</Note>
+
+### output
+
+実行が自身について書き出すすべてのものを置くディレクトリで、プロジェクトルートから
+解決されます。
+
+```ts
+output: 'test-results/e2e', // default: '.e2e'
+```
+
+[`e2e run`](/reference/cli#e2e-run) と `e2e explore` の `--output <dir>` で、1 回の実行に
+限り上書きできます。
+
+| output 配下のパス | 内容 |
+| --- | --- |
+| `report.json` | 正規のレポート。`--last-failed` はここにあるものを読み取ります |
+| `junit.xml`, `summary.md` | `junit` レポーターと `markdown` レポーターのファイル |
+| `ai-trace.json` | `--ai-trace` |
+| `timings.json` | 各ファイルにかかった時間を直近の実行で平滑化したもの。ワーカーが複数ある実行は、これを基に時間の長いファイルから開始します。[タイミング履歴をキャッシュする](/ci#cache-the-timings-history) を参照してください |
+| `results/` | テストごとに 1 つのディレクトリ。その [トレースページ](/debugging#traces)（[`trace`](#trace) モードが保持する場合は `trace.md`）、およびスクリーンショット、動画、ダウンロード、ログを、試行ごとに 1 つの `attempt-<n>/` に格納します。実行のテストが開始されるとクリアされるため、最新の実行の証跡だけを保持し、レポートが参照しなくなったものは残りません。`--last-failed` による再実行では、再実行の元となるレポートが参照するファイルを保持し、自身の試行は各テストの `rerun-<n>/` の下に書き出します |
+| `sessions/` | 実行の暗号化された `test.setup` セッション。実行の終了時に削除されます |
+| `videos/<session>/` | [`e2e mcp`](/reference/mcp#recording) セッションの録画 |
+
+- テストの開始前に停止した実行は、ここに何も書き出しません。そのような停止には、
+  どのテストにもマッチしない選択（`NO_TESTS`、`--grep` の打ち間違い）、収集エラー、
+  要求されたものを記録できないターゲット（`UNSUPPORTED_ARTIFACT`）、`NO_LAST_RUN`、
+  起動に失敗したアプリコマンド、割り込みがあります。前回の実行の `report.json`、
+  `ai-trace.json`、`results/` はそのまま残るため、`--last-failed` は引き続き
+  最後に実行された実行を読み取ります。
+- `e2e mcp` セッションは、その試行のアーティファクトを `results/mcp/` の下に書き出し、
+  クリアすることはありません。
+- リプレイキャッシュは `output` の値にかかわらず [`cache.dir`](#dir) に置かれるため、
+  結果を移動しても記録が移動することはありません。
+- `e2e init` は、デフォルトの `.e2e/` のパスに対してのみ `.gitignore` のエントリを書き込みます。
+  `output` を別の場所に設定した場合は、そのディレクトリを自分で `.gitignore` に追加してください。
+
+実行は output ディレクトリの一部をクリアし、管理します。そのため、ディレクトリが
+次のいずれかに当てはまる場合、設定の読み込みは理由を示す `INVALID_CONFIG` で失敗します。
+
+- プロジェクトルートそのもの、またはその外側にある。
+- ファイル、またはファイル配下のパスである（存在しないディレクトリは作成されます）。
+- キャッシュディレクトリ（`cache.dir`、`--cache-dir`、または `E2E_CACHE_DIR`）そのもの
+  またはその内側にある、あるいは `results/`、`sessions/`、`videos/` の下にキャッシュ
+  ディレクトリを含むことになる。
+- `tests` の glob がスキャンするディレクトリを含む（デフォルトの `tests/**/*.e2e.ts` に
+  対する `output: 'tests'`）。
+
+パスはシンボリックリンクを解決したうえで比較されます。シンボリックリンク経由で書いた
+絶対パス（macOS での `/private/tmp` に対する `/tmp`）は、そのリンク先と同じディレクトリを
+指します。リンク先がまだ存在しないシンボリックリンクもたどるため、プロジェクトルートの
+外側を指すシンボリックリンク経由の output は拒否されます。
+
+<Note>
+削除された `--artifacts <dir>` フラグは、対応する `--output` を示して失敗します。以前は
+レポートがそのディレクトリの親に出力されていたため、`--artifacts out/artifacts` は
+`--output out` に相当します。output にできない親（プロジェクトルート、またはその外側）は
+`--output .e2e` に対応します。
+</Note>
+
+### artifacts
+
+`artifacts` は、どのアーティファクトを作るかではなく、どこに置くかを指定します。
+`{ store }` は、生成された各アーティファクトをその都度ホストのストアに渡します。
+指定しない場合、ファイルはローカルにのみ残ります。
+
+```ts
+artifacts: {
+  store: {
+    async put(artifact) {
+      const key = await bucket.upload(artifact.path, artifact.bytes);
+      return { ref: key };
+    },
+  },
+},
+```
+
+| メンバー | 戻り値 |
+| --- | --- |
+| [`store.put`](#put) | `Promise<{ ref }>` |
+| [`store.putLink`](#putlink) | `Promise<{ ref }>` |
+
+- [`trace` と `video`](#recording) が記録するものを選びます。ランナーは、エンジンが
+  対応していれば常に、失敗時のスクリーンショットと画面テキストを取得します。
+- 各ワーカーは設定モジュールから独自のストアを構築します。
+- `put` や `putLink` が失敗しても、実行が失敗することはありません。
+
+削除された書き方は、置き換え先を示す `INVALID_CONFIG` で失敗します。
+
+| 書いたもの | 現在 |
+| --- | --- |
+| 種類のリスト（`artifacts: ['screenshot', 'trace']` または `artifacts.kinds`） | それが意図していた `trace` モード |
+| `record: 'retries'` を指定した `artifacts.trace` | `trace: 'on-all-retries'`。`trace` を含む種類のリストと組み合わせて読まれるため、その組み合わせは引き続きリトライのみを意味します |
+| `artifacts.video` | `video` オプション |
+
+宣言は [`ArtifactsConfig`](#artifactsconfig) にあります。
+
+#### `put`
+
+ディスク上で完成した各アーティファクトを受け取り、レポートがローカルパスと並べて
+`ref` として記録する参照を返します。
+
+```ts
+async put(artifact) {
+  return { ref: await bucket.upload(artifact.path, artifact.bytes) };
+},
+```
+
+- すべてのストアで必須です。
+- `artifact.redaction` はレポートのラベルです。ランナーが保証するものだけをエクスポートする
+  ストアは、`incomplete` のアーティファクト、つまりランナーが書き換えていない動画や
+  ダウンロードを保留します。
+
+#### `putLink`
+
+ホスト型のサービスが保持する動画（[プロバイダー自身の録画](#what-a-video-writes)）を
+受け取ります。そのような動画はバイト列を持たないリンクなので、`put` には渡されません。
+
+```ts
+async putLink(link) {
+  return { ref: await index.record(link.url, link.attemptId) };
+},
+```
+
+- 省略可能です。試行が録画を停止した後、リンクごとに呼び出されます。
+- その `ref` は、レポートのアーティファクトに `url` と並べて記録されます。
+- `retain-on-failure` の下で成功した試行のリンクは、レポートからも除外されるため、
+  渡されることはありません。
+
+### 記録
+
+`trace` と `video` は、共通のモードを使って何を記録するかを選びます。
+
+```ts
+trace: 'on',
+video: 'retain-on-failure',
+targets: [
+  { name: 'chromium', engine: web(), app: { url } },
+  { name: 'firefox', engine: web({ browser: 'firefox' }), app: { url }, video: 'on-first-retry' },
+],
+```
+
+| オプション | 型 | デフォルト |
+| --- | --- | --- |
+| [`trace`](#trace) | `RecordingMode` | `'retain-on-failure'` |
+| [`video`](#video) | `RecordingMode` | `'off'` |
+
+```ts
+/** Which tests keep a trace page, or which attempts record a video. */
+export type RecordingMode = 'off' | 'on' | 'retain-on-failure' | 'on-first-retry' | 'on-all-retries';
+```
+
+| モード | トレースページ | 動画 |
+| --- | --- | --- |
+| `off` | なし | なし |
+| `on` | 成功したものを含むすべてのテスト | すべての試行 |
+| `retain-on-failure` | 失敗、タイムアウト、中断、またはフレーキーになった各テスト | すべての試行を録画し、成功しなかったものを保持 |
+| `on-first-retry` | 最初のリトライが実行された各テスト | 最初のリトライ（2 回目の試行）のみ |
+| `on-all-retries` | リトライされた各テスト | 最初の試行以降のすべての試行 |
+
+これらの名前は Playwright の `use.trace` と `use.video` のモードと同じです。リトライの
+モードでは、`retries: 0` のテストは何も記録せず、`LAUNCH_TIMEOUT` のようにランナーが
+リトライしない失敗も記録されません。そのようなテストを実行する場合、実行計画の時点で
+種類ごとに 1 つの通知が表示され、そのテストではトレース（または動画）が記録されないことを
+知らせます。
+
+モードを設定できる場所は 4 つあり、優先度の低い順に並べると次のとおりです。`trace` と
+`video` のどちらも、後のものが前のものを置き換えます。
+
+1. 設定のトップレベルの `trace` または `video`。
+2. ターゲットの `trace` または `video`。
+3. [`e2e run`](/reference/cli#e2e-run) の `--trace [mode]` または `--video [mode]`。
+   設定とすべてのターゲットより優先されます。値を付けずにフラグだけを指定すると `on` です。
+4. テストまたは describe 自身の [`trace` または `video` オプション](/reference/test#options)。
+   最も内側のものが優先されます: `test('checkout', { video: 'on' }, ...)`。
+
+- シリアルグループは 1 つの単位として記録されるため、そのメンバーは `trace` や `video` を
+  設定できません（`retries` と同様に `COLLECTION_ERROR` になります）。シリアルの
+  `describe`、またはそれを囲むグループに指定した値が、すべてのメンバーに適用されます。
+- `e2e explore` は 1 回の試行で、`--trace` と `--video` を含めてターゲットのモードを
+  使います。そのため、リトライのモードではそこで何も記録されません。
+- `e2e mcp` セッションはトレースを書き出さず、設定されたモードに基づいて動画を録画する
+  こともありません。その録画は `start_recording` と `stop_recording` によって作られるものです。
+- `trace` と `video` は、トップレベルでもターゲットでも、設定のダイジェストにもリプレイの
+  [キャッシュキー](/cache#what-must-match)にも含まれません。どちらかをオンまたはオフにしても、
+  キャッシュされたリプレイが無効になることはありません。
+
+<Note>
+古いトレースの書き方は、モードを書けるあらゆる場所（設定、ターゲット、テスト、`--trace`）で、
+意図していたモードを示す `INVALID_CONFIG` で失敗します。
+`'all'` と `{ record: 'all' }` は `'on'`、`'retries'` と `{ record:
+'retries' }` は `'on-all-retries'` です。
+</Note>
+
+#### `trace`
+
+どのテストがトレースページを保持するかを指定します。
+
+```ts
+trace: 'on', // default: 'retain-on-failure'
+```
+
+- デフォルトはローカルでも CI でも同じです。
+- トレースページは Markdown で、`<output>/results/` 配下のテストのディレクトリにある
+  `trace.md` です。例:
+  `.e2e/results/checkout-applies-the-coupon-1a2b3c4d5e6f7a8b/trace.md`。
+  各ステップとその内容、キャッシュの判断、アプリが記録したログ、失敗時の画面が含まれます。
+- すべてのエンジンで動作します。[デバッグ](/debugging#traces) に例があります。
+
+#### `video`
+
+どの試行で動画を録画するかを指定します。
+
+```ts
+video: 'retain-on-failure', // default: 'off'
+```
+
+- 録画できないエンジンでの動作は、モードをどこで設定したかによって決まります。
+  [録画できないエンジン](#engines-that-cannot-record) を参照してください。
+- 動画は CPU を消費し、シークレットを含め画面に表示されたものを保持するため、
+  常に明示的に要求する必要があります。
+
+#### 録画できないエンジン
+
+テストが開始される前に、実行はすべてのターゲットを評価します。動画を録画できないエンジンで
+どうなるかは、`video` のモードをどこで設定したかによって決まります。
+
+- 設定のトップレベル、または `--video` で設定した場合: モードは、エンジンが録画できる
+  ターゲットに適用されます。実行計画の時点で、録画できないターゲットを示す通知が 1 つ
+  表示され、それらは動画なしで実行されます。
+- ターゲット、またはそのターゲットで実行されるテストで設定した場合: そのモードは必須と
+  なります。エンジンが録画できないターゲットがあると、実行は `UNSUPPORTED_ARTIFACT` で
+  失敗し、ターゲットと、テストで設定した場合はそのテストが示されます。
+
+対象となるのは、いずれかの試行で録画するモードだけです。すべてのテストが `off`、
+または `retries: 0` のリトライモードに解決される実行は、エンジンに何も要求しません。
+
+#### 動画が書き出すもの
+
+| レコーダー | 試行のアーティファクトディレクトリ配下のファイル |
+| --- | --- |
+| ブラウザエンジン、Playwright のスクリーンキャスト | `video/video.webm`。試行で表示されたページごとに 1 つのセグメントがあり、2 つ目以降は `video/video-part<n>.webm` になります。[`web({ screencast })`](/reference/web#options) でフレームサイズと品質を設定します |
+| モバイルエンジン、agent-device | `video/video.mp4` |
+| プロバイダー自身の録画（[`BrowserProvider.record`](/browser#recording-on-the-provider)、[`DeviceProvider.record`](/mobile#hosted-devices)） | プロバイダーが書き出したファイルを `video/<file>` として格納します。Kernel の場合は `video/replay.mp4` です。または、サービスが保持する録画へのリンクを、`path` の代わりに `url` として記録します。ランナーがそれをダウンロードすることはありません |
+
+- 各セグメントは `startedAt` を持つため、`step.startedAt - artifact.startedAt` が
+  そのセグメント内でのステップのオフセットになります。
+- 録画は何もマスクせず、`redaction: 'incomplete'` として記録されます。
+
+<Note>
+`retain-on-failure` の下では、成功した試行のレポートからリンクは除外されますが、
+サービスは引き続き録画を保持しています。
+</Note>
+
+### agents
+
+名前付きのエージェントで、それぞれが 1 つのプレーンなオブジェクトです。組み込みエージェントの
+オプション、またはカスタムのブレインを使う場合は `{ executor }` を指定します。
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { gateway } from 'ai';
+import { houseBrain } from './house-brain.ts';
+
+export default {
+  targets: [{ engine: web(), app: { url: 'http://localhost:3000' } }],
+  agents: {
+    default: { model: gateway('openai/gpt-6-luna-fast') },
+    ux: { model: gateway('openai/gpt-6-luna-fast'), system: 'Check labels, contrast, and keyboard access.' },
+    thorough: { model: gateway('anthropic/claude-opus-5'), context: 'Verify every claim on screen.' },
+    buyer: {
+      model: gateway('openai/gpt-6-luna-fast'),
+      system: 'You are a first-time buyer.',
+      context: 'Plans are called tiers. Billing lives under Settings.',
+      maxSteps: 40,
+    },
+    house: { executor: houseBrain, model: gateway('openai/gpt-6-luna-fast'), maxModelCalls: 10 },
+  },
+} satisfies E2EConfig;
+```
+
+| オプション | 型 | デフォルト |
+| --- | --- | --- |
+| [`model`](#model) | `ModelInstance` | - |
+| [`judge`](#judge) | `ModelInstance` | `model` |
+| [`context`](#context) | `string` | - |
+| [`system`](#system) | `string` | - |
+| [`tools`](#tools) | `Record<string, AgentTool>` | - |
+| [`executor`](#executor) | `StepExecutor` | 組み込みエージェント |
+| [`maxSteps`](#maxsteps) | `number` | `25` |
+| [`maxModelCalls`](#maxmodelcalls) | `number` | `25` |
+| [`judgmentTimeout`](#judgmenttimeout) | `number` | `30000` |
+| [`maxObservationBytes`](#maxobservationbytes) | `number` | `262144` |
+| [`maxInputTokens`](#maxinputtokens) | `number` | `64000` |
+| [`providerOptions`](#provideroptions) | `ProviderOptions` | - |
+
+- 別のエージェントを選ばない限り、テストは `default` エージェントを使います。選ぶには
+  `e2e run --agent <name>`、テストまたはグループのオプション、あるいは `agent.*` の呼び出しを
+  使います。`{ agent: ['buyer', 'admin'] }` を指定したテストは、エージェントごとに 1 回ずつ
+  実行されます。
+- `default` は、設定でエージェントを 1 つも宣言していなくても存在しますが、モデルを持ちません。
+- 各エントリは組み込みのデフォルト値から始まります。エージェント同士で継承は行われず、
+  上の例の `ux` は `default` から `context` を受け継ぎません。エントリで省略したキーは
+  デフォルト値になり、他のエントリの値になることはありません。
+- 各ワーカーは、この設定モジュールから独自のエージェントを構築します。
+- 名前には ASCII の英字、数字、`_`、`-`、`.` を使えますが、ドットだけの名前は使えません。
+  名前はアーティファクトのパスのセグメントになるためです。
+
+| スローされるエラー | 条件 |
+| --- | --- |
+| `INVALID_CONFIG` | `--agent` フラグに未知のエージェント名を指定した。 |
+| `COLLECTION_ERROR` | テストまたはグループに未知のエージェント名を指定した。 |
+| `INVALID_ARGUMENT` | 呼び出しに未知のエージェント名を指定した。 |
+
+[エージェントとペルソナ](/agents) を参照してください。宣言は
+[`AgentConfig`](#agentconfig) にあります。
+
+#### `model`
+
+AI SDK のモデルインスタンスです。暗黙のデフォルトはありません。
+
+```ts
+model: gateway('openai/gpt-6-luna-fast'),
+```
+
+AI SDK のプロバイダーを使って、設定内でモデルを構築してください。ツール呼び出しに対応する
+プロバイダーであればどれでも動作します。[AI SDK プロバイダー](/models#ai-sdk-providers) を
+参照してください。サブスクリプションでのサインインには、
+[`e2e/oauth/*` モデル](/subscriptions) を使います。
+
+| ゲートウェイ | コンストラクター | パッケージ | 読み取るもの |
+| --- | --- | --- | --- |
+| [Vercel AI Gateway](https://vercel.com/docs/ai-gateway) | `gateway('openai/gpt-6-luna-fast')` | `ai` | `AI_GATEWAY_API_KEY`。ない場合は Vercel の OIDC トークン |
+| [OpenRouter](https://openrouter.ai/models) | `openrouter('openai/gpt-6-luna-fast')` | `@openrouter/ai-sdk-provider` | `OPENROUTER_API_KEY` |
+| 任意の OpenAI 互換エンドポイント | `createOpenAICompatible({ name, baseURL, apiKey? }).chatModel('llama3.2')` | `@ai-sdk/openai-compatible` | エンドポイントが必要とする場合は `apiKey` |
+| プロバイダーを直接使用 | `openai('gpt-6-luna')`, `anthropic(...)`, ... | `@ai-sdk/openai`, `@ai-sdk/anthropic`, ... | プロバイダー独自の変数 |
+
+- レポートには、ステップごとに `provider` と `modelId` が記録されます。
+- 各ワーカーは設定モジュールから独自のインスタンスを構築します。ランナーとワーカーで
+  ダイジェストが異なる場合は `CONFIG_NOT_DETERMINISTIC` になります。
+- 文字列を指定すると、書くべきコンストラクターを示す `INVALID_CONFIG` になります。
+- エージェントが `default` のモデルにフォールバックすることはありません。
+  [解決順序](#resolution-order) を参照してください。
+
+[モデル](/models) と [`ModelInstance`](#modelinstance) を参照してください。
+
+#### `judge`
+
+探索を行わない `assert`、`waitFor`、`extract` に使うモデルです。組み込みの探索型
+アサーションは、`judge` が設定されていても `agents.<name>.model` を使います。
+
+```ts
+judge: gateway('anthropic/claude-opus-5'), // default: model
+```
+
+- ジャッジは 1 回の呼び出しにつき 8192 個の出力トークンを使えます。
+- ジャッジが参照するのは、指示、そのパラメーター、エージェントのコンテキスト、そして現在の画面とその位置です。
+
+[専用のジャッジ](/models#a-judge-of-its-own) を参照してください。
+
+#### `context`
+
+アプリでの物事の呼び方を伝えるもので、このエージェントが行うすべてのモデル呼び出し
+（act のターンとジャッジの両方）に渡されます。
+
+```ts
+context: 'Plans are called tiers. Billing lives under Settings.',
+```
+
+最大 16384 バイトです。
+
+#### `system`
+
+行動するエージェントがどう振る舞うべきかを指定するもので、組み込みのルールの後に追加されます。
+これを読むのは act ループだけです。
+
+```ts
+system: 'You are a first-time buyer.',
+```
+
+`executor` と併用すると `INVALID_CONFIG` になります。エグゼキューターは独自のプロンプトを持つためです。
+
+#### `tools`
+
+`defineTool`（`e2e/agent`）で作成したプロジェクトのツールで、組み込みのツールセットと
+並べて提供されます。
+
+```ts
+tools: { lookupOrder },
+```
+
+`executor` と併用すると `INVALID_CONFIG` になります。エグゼキューターは独自のツールを持つためです。
+
+#### `executor`
+
+組み込みエージェントの代わりに `agent.act()` のディスパッチ先となるカスタムのブレインです。
+
+```ts
+house: { executor: houseBrain, model: gateway('openai/gpt-6-luna-fast'), maxModelCalls: 10 },
+```
+
+- `model`、`judge`、`context`、および各種の上限は引き続き適用されます。ジャッジには
+  モデルが必要です。これと並べて [`system`](#system) や [`tools`](#tools) を指定すると
+  `INVALID_CONFIG` になります。
+- `maxModelCalls` は 1 ステップのモデルのターン数を制限します。
+- エグゼキューターが持ち込んだものと異なる `model` または `judge` を指定すると
+  `INVALID_CONFIG` になります。
+
+[カスタムエグゼキューター](/executors) を参照してください。
+
+#### `maxSteps`
+
+エージェントの 1 回の呼び出しで確定するアクションの数です。
+
+```ts
+maxSteps: 40, // default: 25
+```
+
+1 から 100 までです。
+
+#### `maxModelCalls`
+
+エージェントの 1 回の呼び出しでのモデルリクエストの数です。
+
+```ts
+maxModelCalls: 10, // default: 25
+```
+
+1 から 100 までです。
+
+#### `judgmentTimeout`
+
+`assert`、`waitFor`、`extract` の 1 回の呼び出しの期限（ミリ秒）です。
+
+```ts
+judgmentTimeout: 60_000, // default: 30000
+```
+
+ジャッジが遅い場合は値を上げてください。エンジンの操作には引き続き `actionTimeout` が適用されます。
+
+#### `maxObservationBytes`
+
+act のターンとジャッジにおける観測ペイロードの上限です。
+
+```ts
+maxObservationBytes: 524_288, // default: 262144
+```
+
+1024 から 16777216 までです。
+
+#### `maxInputTokens`
+
+モデルリクエスト 1 回あたりの入力トークン数です。
+
+```ts
+maxInputTokens: 128_000, // default: 64000
+```
+
+- 1 から 1000000 までです。
+- 情報量の多い画面は、この値に収まるように切り詰められます。
+
+#### `providerOptions`
+
+すべてのモデル呼び出しに付けるプロバイダーオプションで、推論の強度（reasoning effort）などを指定します。
+
+```ts
+providerOptions: { openai: { reasoningEffort: 'low' } },
+```
+
+OpenAI と Azure OpenAI の Responses の呼び出しでは、ここで設定しない限り、
+`store: false` とプロンプトキャッシュキーも付けられます。
+
+#### 削除されたオプション
+
+未知のキー（エラーには最も近い既知のキーが示されます）、削除されたキー、または古い形の値は、
+設定の読み込みを `INVALID_CONFIG` で失敗させます。
+
+| 書いたもの | 現在 |
+| --- | --- |
+| エントリとしての単独の `StepExecutor` | `{ executor }` |
+| `timeout` | `judgmentTimeout` |
+| `maxTurns`（エントリまたは `createToolLoopExecutor` 上） | `maxModelCalls` |
+| トップレベルの `limits.maxModelTokensPerCall` | 各エージェントの `maxInputTokens` |
+| トップレベルの `limits.maxAgentContextBytes`、`maxLedgerBytes`、`maxEventsPerStep` | 削除されました。ランナーがそれぞれ 16384 バイト、8192 バイト、1000 イベントに固定します |
+
+### filters
+
+変更の影響を受けないテストを除外する [テストフィルター](/filters) で、実行に
+`--changed-since` を指定したときに順番に適用されます。
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { gateway } from 'ai';
+import { decisionFilter } from '@e2e-dev/decision';
+
+export default {
+  targets: [{ engine: web(), app: { url: 'http://localhost:3000' } }],
+  filters: [decisionFilter({ model: gateway.decisionModel('typesafe-ai/jev') })],
+} satisfies E2EConfig;
+```
+
+どのテストが常に実行されるかは
+[テストフィルター](/filters#what-always-runs) にあります。`name` はターゲット名の
+ルールに従い、最大 256 文字で、`filters` の中で一意である必要があります。
+
+| スローされるエラー | 条件 |
+| --- | --- |
+| `INVALID_CONFIG` | 不正な `name`、`{ name, filter }` ではない項目、または `decisionFilter({ model })` の代わりに `decisionFilter` のような関数をそのまま指定した。 |
+
+宣言は [`TestFilter`](#testfilter) にあり、`e2e` から export されています。
+
+### credentials
+
+名前付きのアカウントです。各エントリは、ユーザー名と、モデルには決して見せない
+パスワードから成ります。
+
+```ts
+credentials: {
+  admin: { username: 'admin@example.com', password: () => readFile('.secrets/admin', 'utf8') },
+},
+```
+
+| フィールド | 型 |
+| --- | --- |
+| [`username`](#username) | `string` |
+| [`password`](#password) | `string \| SecretProvider` |
+
+- 認証情報とシークレットは別々の名前空間です。`secrets.get(name)` は `secrets` の
+  エントリのみを返します。認証情報のパスワードには
+  `credentials.user(name).password` としてのみアクセスできます。
+- エージェント、リプレイキャッシュ、レポートは、そのパスワードを `<name>.password` という
+  名前のシークレット（`<secret:admin.password>`）として扱います。そのため
+  `credentials.admin` と `secrets.admin` は両方とも存在できます。
+
+| スローされるエラー | 条件 |
+| --- | --- |
+| `INVALID_CONFIG` | `admin` の認証情報と並んで、名前がちょうど `admin.password` の `secrets` エントリがある。 |
+| `INVALID_CONFIG` | `svc-a` と `svc_a` のように、名前が同じ `E2E_USER_<NAME>_*` の上書きに対応する 2 つの認証情報がある（[環境変数](/reference/environment) を参照）。 |
+
+[認証](/authentication) を参照してください。宣言は
+[`CredentialConfig`](#credentialconfig) にあります。
+
+#### `username`
+
+アカウントの平文のユーザー名です。
+
+```ts
+username: 'admin@example.com',
+```
+
+`E2E_USER_<NAME>_USERNAME` が設定値より優先されます。どちらもない場合、そのエントリは
+`INVALID_CONFIG` になります。
+
+#### `password`
+
+アカウントのパスワードです。静的な値、または `SecretProvider` 関数を指定します。
+
+```ts
+password: () => readFile('.secrets/admin', 'utf8'),
+```
+
+- 静的なパスワードは、[シークレット](#secrets) と同様に少なくとも 6 文字（コードポイント）
+  必要で、満たさない場合は `INVALID_CONFIG` になります。
+- `SecretProvider` は、許可された入力（fill）のたびに実行されます（ボールトの参照や、
+  その都度計算される TOTP など）。設定のダイジェストには名前だけが記録されます。
+  6 文字未満を返すプロバイダーは、入力を `AUTH_CREDENTIAL_UNAVAILABLE` で失敗させます。
+- `E2E_USER_<NAME>_PASSWORD` はその両方より優先されます。
+
+#### `credentials.user()`
+
+テスト内で、設定されたエントリを `Credential` に解決します。
+
+```ts
+const admin = credentials.user('admin');
+```
+
+- ユーザー名は平文の文字列です。パスワードはテストコードからは読み取れない不透明な
+  `Secret` で、`locator.fill` と `agent.act` のパラメーターでのみ受け付けられます。
+- 設定されていない名前を指定すると `AUTH_CREDENTIAL_UNAVAILABLE` がスローされます。
+
+### secrets
+
+モデルに決して見せてはならない名前付きの値です。API キー、トークン、環境から取得する
+あらゆる値が該当します。
+
+```ts
+secrets: {
+  apiKey: () => readFile('.secrets/api-key', 'utf8'),
+},
+```
+
+| エントリ | 例 | 検査のタイミング |
+| --- | --- | --- |
+| 静的な値 | `'sk_test_51Hx…'` | 設定の読み込み時 |
+| プロバイダー | `() => readFile('.secrets/api-key', 'utf8')` | 許可された入力のたび |
+
+- プロバイダーは、許可された入力のたびに実行されます（ボールトの参照や、その都度計算される
+  TOTP など）。設定のダイジェストには名前だけが記録されます。
+- `E2E_SECRET_<NAME>` による上書きはその両方より優先されます。
+- すべてのエントリは、6 文字（コードポイント）以上の文字列か関数に解決される必要があり、
+  それ以外は `INVALID_CONFIG` になります。プロバイダーの値にも入力時に同じ最小長が
+  適用され、満たさない場合は `SECRET_UNAVAILABLE` になります。
+- この最小長はマスキングのために存在します。値が出現する箇所はすべて `<secret:name>` に
+  置き換えられるため、短い値ではレポートや出力の通常のテキストまで巻き込まれてしまいます。
+- `api-key` と `api_key` のように、名前が同じ変数に対応する 2 つのエントリは
+  `INVALID_CONFIG` になります。
+
+宣言は [`SecretConfig`](#secretconfig) にあります。
+[パスワード以外のシークレット](/authentication#secrets-that-are-not-passwords) を参照してください。
+
+#### `secrets.get()`
+
+設定されたエントリに対応する不透明な `Secret` を返します。
+
+```ts
+await screen.getByLabel('API key').fill(secrets.get('apiKey'));
+```
+
+- 平文を取得する手段はなく、`locator.fill` と `agent.act` のパラメーターでのみ
+  受け付けられます。
+- ランナーがフィールドに入力し、すべての観測で値をマスクし、ログ、トレース、レポートから
+  値を除去します。
+- 設定されていない名前を指定すると `SECRET_UNAVAILABLE` がスローされます。
+
+#### エンジンオプション内のシークレット
+
+`e2e.config.ts` の評価中、つまり実行が存在する前は、`secrets.get(name)` は
+エンジンオプションに保持できる、名前による参照を返します。
+
+```ts
+engine: web({ basicAuth: { username, password: secrets.get('previewPassword') } }),
+```
+
+- エンジンがこれを宣言します。その名前の `secrets` エントリがない場合、設定の読み込みは
+  `INVALID_CONFIG` で失敗します。認証情報のパスワードはこれに該当しません。エンジン
+  オプションに必要な値は `secrets` に宣言してください。
+- エンジンは各試行の開始時に値を解決するため、プロバイダーは毎回再実行されます。その後、
+  値はその試行のマスキング対象に加わります。値はページではなくエンジンに渡されるため、
+  入力（fill）に伴うスクリーンショットの制限は一切ありません。
+- ダイジェストには名前だけが記録されます。
+- 参照は値そのものではありません。文字列に変換すると（テンプレートリテラル、
+  `String()`、`+`、`JSON.stringify`）、`INVALID_CONFIG` がスローされます。文字列と
+  プレースホルダーしか受け付けない `app.command` の `args` エントリや `env` 値に参照を
+  入れた場合も同様です。アプリの API キーのように文字列として必要な値は、
+  自分で `process.env` から読み取ってください。
+
+### cache
+
+リプレイキャッシュのモードまたはオプションです。`read-write` モードでは、リプレイキャッシュは
+`agent.act()` を、ロケーターのアサーションや `agent.assert()` など後続の検証が成功した後にのみ
+記録します。
+
+```ts
+cache: { mode: 'read-write', dir: '.e2e/cache', strict: true },
+```
+
+| オプション | 型 | デフォルト |
+| --- | --- | --- |
+| [`mode`](#mode) | `CacheMode` | `'read-write'`、CI では `'read-only'` |
+| [`store`](#store) | `CacheStore` | `dir` にあるファイルストア |
+| [`dir`](#dir) | `string` | `'.e2e/cache'` |
+| [`strict`](#strict) | `boolean` | `false` |
+
+文字列だけを指定すると `{ mode }` の省略形になります: `cache: 'read-only'`。
+[キャッシュ](/cache) を参照してください。宣言は [`CacheConfig`](#cacheconfig) にあります。
+
+#### `mode`
+
+リプレイキャッシュが何を読み書きするかを指定します。
+
+```ts
+cache: 'read-write', // default: 'read-write' locally, 'read-only' in CI
+```
+
+| モード | 動作 |
+| --- | --- |
+| `'read-write'` | エントリをリプレイし、新しいエントリを記録します。 |
+| `'read-only'` | 既存のエントリをリプレイし、何も書き込みません。 |
+| `'off'` | 両方を無効にします。 |
+
+- 明示的に指定したモードはデフォルトより優先されます。CI が独自のキャッシュサービスから
+  キャッシュを復元する場合は、`'read-write'` を明示的に設定してください。
+- `--no-cache` はその両方より優先され、その実行ではキャッシュを無効にします。
+
+#### `store`
+
+ファイルストアを置き換えるカスタムのエントリストアです。
+
+```ts
+cache: { store: createStore(cacheUrl) },
+```
+
+- 各ワーカーが独自のものを構築します。
+- CI での格下げ（read-only 化）の対象外です。`writable` を通じて自身の信頼性を示すためです。
+- これと並べて `--cache-dir` を指定すると `INVALID_CONFIG` になり、`E2E_CACHE_DIR` は無視されます。
+
+`CacheStore`、`CacheReadResult`、`TraceEntry`、`ActionTrace` は `e2e` から
+export されています。
+
+#### `dir`
+
+ファイルストアのディレクトリで、プロジェクトルートを基準に解決されます。
+
+```ts
+cache: { dir: '.cache/e2e' }, // default: '.e2e/cache'
+```
+
+- `output` の値にかかわらず、この場所にとどまります。
+- `--cache-dir` と `E2E_CACHE_DIR` で置き換えられます。
+
+#### `strict`
+
+記録は存在するものの、もうリプレイできないステップを、エージェントに渡す代わりに
+`REPLAY_STALE` で失敗させます。
+
+```ts
+cache: { strict: true }, // default: false
+```
+
+- `--strict-cache` で 1 回の実行に限りオンにできます。
+- その場合、実行はキャッシュに一切書き込みません。
+
+[古くなった記録で失敗させる](/cache#fail-on-a-stale-recording) を参照してください。
+
+#### リプレイキャッシュをコミットする
+
+`e2e init` は `.e2e/cache/` を `.gitignore` に追加するため、エントリのコミットは
+オプトインです。CI やチームメンバーとリプレイを共有するには、その行を削除してください。
+`cache: 'read-write'` が設定されていない限り、CI は `read-only` のままです。
+[キャッシュ](/cache#commit-the-replay-cache) を参照してください。
+
+## 実行の上限
+
+レポートの `run.limits` ブロックには、実行が適用した上限が記録されます。`limits` キーは
+ありません。2 つのフィールドはエージェントから取られ、残りはランナーが固定します。
+
+| レポートのフィールド | 値 |
+| --- | --- |
+| `maxAgentContextBytes` | 16384: エージェントの `context` とテストの `agentContext` |
+| `maxLedgerBytes` | 8192: act ステップが読み取る、それまでのステップの台帳 |
+| `maxEventsPerStep` | 1000: ステップごとに記録されるイベント |
+| `maxObservationBytes` | `agents.<name>.maxObservationBytes` の最大値 |
+| `maxModelTokensPerCall` | `agents.<name>.maxInputTokens` の最大値 |
+
+呼び出しごとのオプションでは、エージェントの上限を下げることしかできません。
+
+## 環境変数
+
+ランナーは決まった範囲の環境変数だけを読み取ります。一覧は
+[環境変数](/reference/environment) のページにあります。`E2E_USER_<NAME>_USERNAME`
+と `E2E_USER_<NAME>_PASSWORD` は認証情報を、`E2E_SECRET_<NAME>` はシークレットを上書きし、
+`CI` は以下のデフォルト値を切り替えます。
+
+### 解決順序
+
+| 設定 | 順序 |
+| --- | --- |
+| ベース URL | ターゲットの `app.url`。ない場合は最初のナビゲーション時に `APP_URL_REQUIRED`。ランナーは `APP_URL` を読み取りません。スキャフォールドされた設定が自分で読み取ります |
+| 組み込みエージェントのモデル | `agents.<name>.model`、次に `agent` の取得時に `MODEL_UNAVAILABLE`。エージェントが `default` のモデルにフォールバックすることはありません |
+| カスタムエグゼキューターのモデル | `agents.<name>.model`、ない場合はエグゼキューターが持ち込んだモデル。2 つの値が異なると `INVALID_CONFIG` |
+| モデルの認証情報 | プロバイダーパッケージ独自の変数、または構築時に渡したキー。最初のモデル呼び出し時にプロバイダーが読み取ります |
+| 認証情報のユーザー名とパスワード | `E2E_USER_*` 変数、次に設定値 |
+
+組み込みエージェントは、モデルの欠落を実行ごとに 1 回、`agent` フィクスチャが最初に
+取得されたときにチェックし、終了コード 2 で実行を停止します。カスタムの
+[エグゼキューター](#executor) は、モデルなしで `act` と `assert` を実装できます。
+`waitFor` と `extract` には引き続きモデルが必要です。
+
+### CI
+
+`CI` が未設定、空、`0`、`false` のいずれでもない限り、CI モードがオンになります。
+
+| 設定 | ローカル | CI |
+| --- | --- | --- |
+| `retries` | `0` | `1` |
+| `workers` | `max(1, floor(availableParallelism() / 2))` | `1` |
+| `cache` | `read-write` | 未設定の場合は `read-only` |
+| `test.only` | 許可 | `ONLY_IN_CI`、終了コード 2 |
+| `command.reuseExisting` | 有効 | 通知とともに無視 |
+
+## 読み込み
+
+ランナーが設定を見つけ、設定とそれがインポートするファイルを読み込む方法です。
+
+### 設定ファイルの検索
+
+- `--config <path>` で明示的にファイルを選択します。
+- 指定しない場合、ランナーは作業ディレクトリとその各親ディレクトリで
+  `e2e.config.ts`、`e2e.config.mts`、`e2e.config.js`、`e2e.config.mjs` を探し、
+  リポジトリのルートで停止します。
+- 同じディレクトリでは TypeScript の設定が JavaScript の設定より優先されるため、
+  `tsc` が `e2e.config.ts` の隣に出力した `e2e.config.js` は無視されます。
+- 1 つのディレクトリに TypeScript の名前が 2 つ、または JavaScript の名前が 2 つある場合は
+  `CONFIG_AMBIGUOUS` になります。
+- 選択されたファイルのディレクトリがプロジェクトルートになります。
+
+### `.env` ファイル
+
+e2e 自体は `.env` ファイルを読み込みません。`e2e.config.ts` の先頭で、Node の
+`process.loadEnvFile()` を使って読み込んでください。各ワーカーは設定を再度インポートするため、
+変数はワーカーにも届きます。
+
+```ts title="e2e.config.ts"
+process.loadEnvFile('.env');
+```
+
+ファイルが存在しない場合はスローされます。一部のマシンにしかファイルがない場合は、
+`node:fs` の `existsSync` で保護してください。パスは e2e を実行したディレクトリを基準に
+解決されますが、ワーカーは設定のディレクトリで起動します。サブディレクトリから実行する
+場合は、代わりに `new URL('.env', import.meta.url)` を渡してください。
+
+### モジュール形式
+
+- 設定ファイルとテストファイルは、最も近い `package.json` の `type` にかかわらず
+  ESM として実行されます。それらがたどり着くすべての `.ts`、`.mts`、`.tsx`、`.jsx`
+  ファイルも同様です。パスで指定したヘルパー、`.ts` のソースを名前で export するパッケージ、
+  CommonJS ファイルが require する `.ts` ファイルが該当します。
+- `.cts` ファイルは CommonJS で、`require`、`import x = require()`、`export =` を使って
+  書きます。その `import` 文は `require` 呼び出しに変換されません。
+- `require` や `module.exports` を使って書いた `.ts` ファイルは読み込みに失敗します。
+  `.cts` という名前にしてください。
+- JavaScript は、そのパッケージが宣言する形式のままです。
+
+### JavaScript
+
+設定とテストは、`tsconfig.json` なしのプレーンな JavaScript でも書けます。
+
+```js title="e2e.config.js"
+import { web } from '@e2e-dev/web';
+import { gateway } from 'ai';
+
+/** @type {import('e2e').E2EConfig} */
+export default {
+  tests: 'tests/**/*.e2e.js',
+  agents: { default: { model: gateway('openai/gpt-6-luna-fast') } },
+  targets: [{ engine: web(), app: { url: 'http://localhost:3000' } }],
+};
+```
+
+- 設定の名前は `e2e.config.js` または `e2e.config.mjs` にしてください
+  （[設定ファイルの検索](#finding-the-config-file)）。
+- ES モジュールで書いてください。`package.json` に `"type": "module"` を設定するか、
+  ファイル名を `.mjs` にします。どちらもない場合、Node.js は読み込みのたびに、ファイルを
+  ESM として再解析したという警告を出します。
+- [`tests`](#tests) を設定してください。デフォルトは `*.e2e.ts` だけを選択します。
+  `.mjs` のテストには `'tests/**/*.e2e.mjs'` を使います。スイートの移行中に両方の種類を
+  実行するには、`'tests/**/*.e2e.ts'` も併せて指定してください。
+- `@type` コメントが `satisfies E2EConfig` の役割を果たし、エディターでキーの補完と
+  ドキュメントの表示が行われます。テストのフィクスチャは、注釈なしで `test` のインポートから
+  型を得ます。
+- ランナーは型チェックを行いません。エディターでエラーを表示するには、ファイルに
+  `// @ts-check` を追加するか、`jsconfig.json` に `"checkJs": true` を追加してください。
+- JavaScript ファイルから TypeScript のヘルパーをインポートするときは、`.js` ではなく
+  `.ts` の名前（`'./helpers.ts'`）を使います。[インポートの解決](#import-resolution) を
+  参照してください。`checkJs` の下では、そのインポートには
+  `"allowImportingTsExtensions": true` と `"noEmit": true` も必要です。
+
+### インポートの解決
+
+e2e は TypeScript と JSX を自身でコンパイルします。そのようなファイル内のインポートは、
+TypeScript と同じ方法で解決されます。
+
+- `./helper.js` と `./helper` は `helper.ts` を読み込み、`./view.jsx` は
+  `view.tsx` を読み込みます。
+- `./lib` は `lib/package.json` が `main` に指定するファイルを読み込み、ない場合は
+  `lib/index.ts` を読み込みます。
+- `tsconfig.json` が `paths` または `baseUrl` でマッピングするベアインポートは、
+  マッピング先のファイルを読み込みます。
+- 存在しない `./x.js`、`./x.jsx`、`./x` を指す `#` インポートやパッケージの export は、
+  インポート時にその `x.ts` または `x.tsx` のソースを読み込みます。
+- ディレクトリを指す `#` インポートやパッケージの export、または `exports` を持たない
+  パッケージのサブパスでディレクトリであるもの（`@acme/db/enums`）は、`./lib` と同じ方法で
+  読み込まれます。Yarn PnP の下では、そのパッケージのサブパスは引き続き失敗します。
+- 最後の 2 つのいずれかを `require()` した場合は、Node.js が報告するとおりに失敗します。
+- JavaScript ファイルに書いたインポートは、Node.js と同じ方法で解決されます。
+
+### `tsconfig.json`
+
+- 使われる `tsconfig.json` は、ファイルの上位で最も近いものです。それが `references` を持ち、
+  ファイル自体を含まない場合（Vite が生成する形）は、推移的に参照されているもののうち、
+  ファイルを含むものが使われます。
+- 参照は宣言順にたどられ、循環はスキップされます。どれもファイルを所有しない場合は、
+  最も近い設定がフォールバックとして使われます。
+- e2e はその `paths`、`baseUrl`、`jsx`、`jsxFactory`、
+  `jsxFragmentFactory`、`jsxImportSource`、`experimentalDecorators`、
+  `emitDecoratorMetadata`、`useDefineForClassFields`（およびそのデフォルト値を決める
+  `target`）、`verbatimModuleSyntax` を、プロセスごとに 1 回、さらに `e2e mcp` が開く
+  セッションごとに再度読み取ります。
+- e2e が読み取れない `tsconfig.json`、たとえばインストールされていないパッケージを
+  `extends` しているものは、警告とともにスキップされます。
+- インストール済みパッケージ内の TypeScript は、プロジェクトの `tsconfig.json` なしで
+  コンパイルされます。
+
+### コンパイルに失敗するもの
+
+- e2e は、コンパイルできない次の 2 つを、ファイルと行を示して拒否します。
+  auto-accessor（`accessor x = 1`）と、`experimentalDecorators` なしのデコレーターです。
+- 各ファイルは型情報なしで個別にコンパイルされます。そのため、`import type` を使わずに
+  インポートした型は、そのインポートが出力に残る場合（`emitDecoratorMetadata` の下での
+  デコレートされたメンバーの型や、再 export された型）に読み込みに失敗します。
+  エラーには変更すべきインポートが示されます。
+- `with { type: 'json' }` なしでインポートした JSON ファイルは、解析された内容を
+  デフォルト export として読み込まれます。
+- スタックトレースと失敗位置は、別のローダーのソースマップ（`NODE_OPTIONS=--import tsx`）を
+  経由した場合も含め、TypeScript のソースを指します。
+
+## 型
+
+### `E2EConfig`
+
+```ts
+export interface E2EConfig {
+  /** Stable project id, 1 through 256 characters; defaults to the root `package.json` name. */
+  projectId?: string;
+  /** The surfaces tests run on; required, at least one, each naming its engine. */
+  targets: readonly Target[];
+  /** Test file globs relative to the project root (`*`, `?`, and a whole `**` segment; a leading `!` excludes); default every `*.e2e.ts` under `tests/`. */
+  tests?: string | readonly string[];
+  /** Test attempt deadline in milliseconds; default 120000. */
+  timeout?: number;
+  /** Engine init and attempt start budget in milliseconds; default 60000. */
+  launchTimeout?: number;
+  /** Budget of every engine operation in milliseconds; default 30000. */
+  actionTimeout?: number;
+  /** Default `expect` deadline in milliseconds; default 5000. */
+  assertionTimeout?: number;
+  /** Budget of each `afterEach` hook, fixture teardown, and engine cleanup in milliseconds; default 30000. */
+  cleanupTimeout?: number;
+  /** Retries per test, 0 through 10; default 1 in CI, else 0. */
+  retries?: number;
+  /** Fail the run when a test skips a retry after an earlier failed attempt; default false. */
+  failOnSkippedFailure?: boolean;
+  /** Wall-clock budget for running the tests, in milliseconds; default none. */
+  maxDuration?: number;
+  /** Parallel workers, 1 through 1024; default 1 in CI, else half the cores. An engine may cap it lower. */
+  workers?: number;
+  /** `{ store }` hands every artifact to a host store as it is produced. */
+  artifacts?: ArtifactsConfig;
+  /** Which tests keep a trace page; default `retain-on-failure`. */
+  trace?: RecordingMode;
+  /** Which attempts record a video; default `off`. */
+  video?: RecordingMode;
+  /** The results directory, relative to the project root; default `.e2e`. */
+  output?: string;
+  /** Output renderers and reporter objects; default `['list']`. */
+  reporters?: readonly (BuiltinReporter | Reporter)[];
+  /** Named agents: the built-in agent's options, or `{ executor }` for a custom brain. */
+  agents?: Readonly<Record<string, AgentConfig>>;
+  /** Test filters, in order, run with `--changed-since`: each judges the tests the one before it kept. */
+  filters?: readonly TestFilter[];
+  /** Replay cache mode or options; default `read-write`, `read-only` in CI. */
+  cache?: CacheMode | CacheConfig;
+  /** Named accounts: a username and a password the model never sees. */
+  credentials?: Readonly<Record<string, CredentialConfig>>;
+  /** Named values the model must never see: API keys, tokens, anything sourced from the environment. */
+  secrets?: Readonly<Record<string, SecretConfig>>;
+}
+```
+
+### `Target`
+
+```ts
+/**
+ * One named test target: the app under test and the engine that drives it.
+ * Without an engine, the target supports agent tools only.
+ */
+export interface Target {
+  /** Label in reports and for `--target`; defaults to the platform. */
+  name?: string;
+  /** Platform label; inherited from the engine when omitted. */
+  platform?: string;
+  /** The engine driving the surface. */
+  engine?: EngineHandle;
+  /** The app under test: what it is, where it is served, and the command that starts it. */
+  app?: TargetApp;
+  /** Which tests on this target keep a trace page, in place of the config's `trace`. */
+  trace?: RecordingMode;
+  /** Which attempts on this target record a video, in place of the config's `video`. */
+  video?: RecordingMode;
+}
+```
+
+### `CommandConfig`
+
+```ts
+export interface CommandConfig {
+  /** Resolved with `PATH`; never shell-interpreted. */
+  executable: string;
+  /** Passed verbatim; `{port}` expands to the app's port. */
+  args?: readonly string[];
+  /** Working directory, resolved from the project root. */
+  cwd?: string;
+  /** Added to the inherited set; `{port}` expands in values. */
+  env?: Readonly<Record<string, string>>;
+  /** Variables copied from the runner's environment when set: exact names, or prefixes ending in `*`. */
+  inheritEnv?: readonly string[];
+  /** Ready-probe budget in milliseconds; default 60000. */
+  startupTimeout?: number;
+  /** Grace period before force-kill in milliseconds; default 10000. */
+  shutdownTimeout?: number;
+  /** File that receives the process's stdout and stderr; omitted discards output. */
+  log?: string;
+  /** Use a process already answering the readiness URL instead of spawning; default `false`. */
+  reuseExisting?: boolean;
+}
+```
+
+### `ArtifactsConfig`
+
+```ts
+export interface ArtifactsConfig {
+  /** Host store every produced artifact is handed to; omit it to keep files local only. */
+  store?: ArtifactStore;
+}
+
+export interface ArtifactStore {
+  put(artifact: StoredArtifact): Promise<{ readonly ref: string }>;
+  /** Receives a provider-hosted video as a link; optional. */
+  putLink?(link: StoredArtifactLink): Promise<{ readonly ref: string }>;
+}
+
+/** One produced artifact, handed to `store.put` once it is complete on disk. */
+export interface StoredArtifact {
+  readonly kind: 'screenshot' | 'video' | 'download' | 'log';
+  readonly mediaType: string;
+  readonly bytes: Uint8Array;
+  readonly size: number;
+  readonly sha256: string;
+  /** Report-relative path with `/` separators, stable across runs of the same test. */
+  readonly path: string;
+  /** How much of the file the runner masked, as the report records it. */
+  readonly redaction: 'complete' | 'incomplete';
+  readonly runId: string;
+  readonly testId: string;
+  readonly attemptId: string;
+  /** The step that produced it, when one was running. */
+  readonly stepId?: string;
+  /** When a time-based artifact (a video segment) began recording. */
+  readonly startedAt?: string;
+}
+
+/** One provider-hosted recording, handed to `store.putLink` once the attempt stopped it. */
+export interface StoredArtifactLink {
+  readonly kind: 'video';
+  /** The `http(s)` URL the service serves the recording from. */
+  readonly url: string;
+  readonly mediaType: string;
+  /** A recording masks nothing, so a link is always `incomplete`. */
+  readonly redaction: 'incomplete';
+  readonly runId: string;
+  readonly testId: string;
+  readonly attemptId: string;
+  /** When the recording started, as an ISO timestamp. */
+  readonly startedAt: string;
+  /** The step that was running when the recording was registered, if any. */
+  readonly stepId?: string;
+}
+```
+
+### `AgentConfig`
+
+```ts
+/** A project tool as `defineTool` from `e2e/agent` returns it. */
+export interface AgentTool {
+  readonly tool: object;
+  readonly annotations: { readonly mutates: boolean; readonly platforms?: readonly string[] };
+}
+
+/** The options every agent takes, whichever brain runs its `act` steps. */
+export interface AgentOptions {
+  /** An AI SDK model instance; no implicit default. */
+  model?: ModelInstance;
+  /** Model for `assert`, `waitFor`, and `extract`; defaults to `model`. */
+  judge?: ModelInstance;
+  /** What the app calls things, told to every model call; at most 16384 bytes. */
+  context?: string;
+  /** Committed actions per agent call, 1 through 100; default 25. */
+  maxSteps?: number;
+  /** Model requests per agent call, 1 through 100; default 25. */
+  maxModelCalls?: number;
+  /** Deadline of one `assert`, `waitFor`, or `extract` call in milliseconds; default 30000. */
+  judgmentTimeout?: number;
+  /** Observation payload ceiling for act turns and judgments, 1024 through 16777216; default 262144. */
+  maxObservationBytes?: number;
+  /** Input tokens per model request, 1 through 1000000; default 64000. */
+  maxInputTokens?: number;
+  /** Provider options every model call carries, such as a reasoning effort. */
+  providerOptions?: ProviderOptions;
+}
+
+/** One entry of `agents`: the built-in agent with its options, or a custom brain under `executor`. */
+export type AgentConfig = AgentOptions &
+  (
+    | {
+        /** How the acting agent should work, appended to the built-in rules. */
+        system?: string;
+        /** Project tools from `defineTool`, offered beside the built-in toolset. */
+        tools?: Readonly<Record<string, AgentTool>>;
+      }
+    | {
+        /** A custom brain `agent.act()` dispatches to instead of the built-in agent. */
+        executor: StepExecutor;
+      }
+  );
+```
+
+### `ModelInstance`
+
+```ts
+/**
+ * An AI SDK LanguageModelV2+ instance. Its provider handles transport
+ * and credentials.
+ */
+export interface ModelInstance {
+  /** The AI SDK specification the instance implements. */
+  readonly specificationVersion: string;
+  /** Provider id, recorded per step in the report. */
+  readonly provider: string;
+  /** Model id, recorded per step in the report. */
+  readonly modelId: string;
+  /** The generate call every AI SDK language model implements; what tells a live instance from its three id strings. */
+  readonly doGenerate: (...args: never[]) => unknown;
+}
+```
+
+### `TestFilter`
+
+```ts
+interface TestFilter {
+  /** Names the filter in the report and in errors. */
+  readonly name: string;
+  readonly filter: (tests: readonly TestFilterCandidate[], context: TestFilterContext) => TestFilterResult | Promise<TestFilterResult>;
+}
+
+interface TestFilterCandidate {
+  /** The report's `testId`, and the key `exclude` and `relevance` take. */
+  readonly id: string;
+  /** Project-relative path of the test file. */
+  readonly file: string;
+  /** The describe titles, then the test title. */
+  readonly titlePath: readonly string[];
+  /** The describe chain's tags, then the test's own. */
+  readonly tags: readonly string[];
+  /** Project-relative path of the setup test file that saves the test's session; absent without one. */
+  readonly setupFile?: string;
+}
+
+interface TestFilterContext {
+  /** Absolute project root, spelled as on disk like `changes.root`. */
+  readonly projectRoot: string;
+  /** The change every filter of the run judges. */
+  readonly changes: TestFilterChanges;
+  /** The config file the run loaded, relative to `changes.root` like `changes.files`; `undefined` for a config object or one outside the repository. */
+  readonly configFile?: string | undefined;
+  /** Aborts when the run is interrupted, or with a `TimeoutError` after 5 minutes. */
+  readonly signal: AbortSignal;
+  /** Prints one progress line. */
+  log(line: string): void;
+  /** Replaces every fixed-value secret and credential password in `text`, and any run of 8 or more consecutive characters of one. */
+  redact(text: string): string;
+}
+
+interface TestFilterChanges {
+  /** The merge base of the `--changed-since` ref and `HEAD`. */
+  readonly base: string;
+  /** Absolute path of the repository root, spelled as on disk like `projectRoot`. */
+  readonly root: string;
+  /** Repository-relative POSIX paths of every changed file, uncommitted and untracked files included. Sorted, never empty. */
+  readonly files: readonly string[];
+}
+
+interface TestFilterResult {
+  /** The tests to leave out, by `id`, each with a non-empty reason the report shows. An `id` of a collected test this filter wasn't given is ignored; any other fails the filter. */
+  readonly exclude: Readonly<Record<string, string>>;
+  /** How likely each test is to fail on this change, by `id` as for `exclude`, from 0 to 1; any other score fails the filter. Each target starts the files of the likeliest first, in bands at 75%, 50%, and 25%, and targets go by the band of their best file, ties in config order. A test no filter scores counts as 0, and a test several filters score keeps its highest. */
+  readonly relevance?: Readonly<Record<string, number>>;
+  /** One line about the whole decision. */
+  readonly note?: string;
+}
+```
+
+`TestFilter`、`TestFilterCandidate`、`TestFilterContext`、
+`TestFilterChanges`、`TestFilterResult` は `e2e` から export されています。
+
+例外をスローした、不正な結果を返した、または 5 分を超えて実行されたフィルターは何も除外せず、
+その旨が警告で示されます。スローするエラーには `TestFilterResult` と同じ形の `relevance` を
+持たせることができ、その場合も実行は失敗の可能性が高いものから開始します。
+[テストフィルター](/filters#write-your-own) を参照してください。
+
+### `CredentialConfig`
+
+```ts
+/** One `config.credentials` entry: an account whose password is a secret named `<entry>.password`. */
+export interface CredentialConfig {
+  username: string;
+  password: string | SecretProvider;
+}
+
+type SecretProvider = () => string | Promise<string>;
+
+/** Named test identity. The password remains an opaque Secret. */
+export interface Credential {
+  /** The entry's name in `credentials`. */
+  readonly name: string;
+  /** Plain username. */
+  readonly username: string;
+  /** Opaque; test code cannot read it. */
+  readonly password: Secret;
+  readonly [credentialBrand]: true;
+}
+```
+
+### `SecretConfig`
+
+```ts
+/** One `config.secrets` entry: the value itself, or a provider computing it at fill time. */
+export type SecretConfig = string | SecretProvider;
+
+/**
+ * What a secret is for, which decides where it may be filled: a `password`
+ * goes only into a password field; a `generic-secret` (an API key, a token,
+ * any value from the environment) goes into any editable input.
+ */
+export type SecretPurpose = 'password' | 'generic-secret';
+
+/** Opaque host-side value accepted only by sensitive input sinks. */
+export interface Secret {
+  /** The entry's name in `secrets`, or `<credential>.password` for a credential's password. */
+  readonly name: string;
+  /** Where the value may be filled. */
+  readonly purpose: SecretPurpose;
+  readonly [secretBrand]: true;
+}
+```
+
+### `CacheConfig`
+
+```ts
+/** Replay cache options. */
+export interface CacheConfig {
+  /** Default `read-write`; `read-only` in CI when unset. */
+  mode?: CacheMode;
+  /** Custom entry store; omit it to use the file store at `dir`. */
+  store?: CacheStore;
+  /** File store directory, resolved against the project root; default `.e2e/cache`. */
+  dir?: string;
+  /** Fail a step whose recording no longer replays with `REPLAY_STALE`. Default `false`. */
+  strict?: boolean;
+}
+
+/** Where the replay cache keeps its entries: the file store by default, or a host's own through `cache.store`. */
+export interface CacheStore {
+  readonly writable: boolean;
+  read(keyHash: string): Promise<CacheReadResult>;
+  /** Persists one trace, returning its size, or undefined when not written. */
+  write(keyHash: string, payload: ActionTrace): Promise<{ bytes: number } | undefined>;
+  /**
+   * Evicts one entry, best-effort. Called when a replayed or just-recorded
+   * flow is implicated in a failed attempt: the entry re-records on the next
+   * pass instead of replaying a poisoned flow forever. Optional: a store
+   * without eviction merely stays stale until the next confirmed write.
+   */
+  delete?(keyHash: string): Promise<void>;
+}
+
+export type CacheReadResult =
+  | { readonly status: 'hit'; readonly entry: TraceEntry; readonly bytes: number }
+  | { readonly status: 'miss' }
+  | { readonly status: 'invalid'; readonly reason: string; readonly bytes?: number };
+```

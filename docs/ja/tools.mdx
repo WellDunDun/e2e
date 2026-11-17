@@ -1,0 +1,166 @@
+---
+title: プロジェクトツール
+description: テスト API、データのセットアップ、デバイス操作のためのツールを追加します。
+"og:image": "https://e2e.com/docs/images/og/tools.png?v=8747047102"
+"twitter:image": "https://e2e.com/docs/images/og/tools.png?v=8747047102"
+---
+
+プロジェクトツールは、ゴールの実行中にエージェントが呼び出せる AI SDK のツールです。
+たとえば、テスト API へのリクエストやデータのセットアップステップなどです。
+
+## ツールを追加する
+
+ツールを `defineTool` でラップし、エージェントの `tools` に入れます。
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { defineTool } from 'e2e/agent';
+import { web } from '@e2e-dev/web';
+import { gateway, tool } from 'ai';
+import { z } from 'zod';
+
+const APP_URL = process.env.APP_URL ?? 'http://localhost:3000';
+
+const seedCart = defineTool(
+  tool({
+    description: 'Seed the cart with a SKU via the store test API',
+    inputSchema: z.object({ sku: z.string() }),
+    execute: async ({ sku }) => {
+      const response = await fetch(`${APP_URL}/api/test/cart?sku=${encodeURIComponent(sku)}`);
+      if (!response.ok) throw new Error(`Cart seeding failed: HTTP ${response.status}`);
+      return response.text();
+    },
+  }),
+  { mutates: true },
+);
+
+export default {
+  targets: [{ engine: web(), app: { url: APP_URL } }],
+  agents: { default: { model: gateway('openai/gpt-6-luna-fast'), tools: { seedCart } } },
+} satisfies E2EConfig;
+```
+
+これで、エージェントはチェックアウトの前にカートにデータを投入できます。
+
+```ts
+await agent.act('seed the cart with SKU {sku}, then check out', {
+  params: { sku: 'SHIRT-BLUE-M' },
+});
+await expect(screen.getByText('Order confirmed')).toBeVisible();
+```
+
+<Note>
+文法の動詞（`tap`、`screenshot`）と同じ名前のツールや、ハーネスが追加するツール
+（`complete_step`、`locate`、`run_code`、`test_lines`、`start_recording`、
+`stop_recording`、`report_finding`）と同じ名前のツールがあると、設定の読み込みは
+`INVALID_CONFIG` で失敗します。`defineTool` で作成していない値や、カスタムの
+`executor` を持つエントリーに `tools` を指定した場合も失敗します。
+</Note>
+
+## ツールの動作を宣言する
+
+`defineTool` は、AI SDK のツールと次のアノテーションを受け取ります。
+
+| アノテーション | 意味 |
+| --- | --- |
+| `mutates: true` | 状態を変更します。この呼び出しは、成否にかかわらず実行前にステップのアクション予算から 1 枠を使い、他のアクションと順番に実行されます。[リプレイキャッシュ](/cache) はこれをリプレイできないため、エージェントはステップのその部分をライブで実行します。 |
+| `mutates: false` | 読み取り専用です。アクションの枠を使わずに実行され、画面を観察したりノードのプロパティを読み取ったりできます。 |
+| `platforms: ['ios', 'android']` | 指定したプラットフォームでのみツールを提供します。省略すると、すべてのターゲットでツールを提供します。 |
+
+## ツールから観察する
+
+読み取り専用のツールは、`getToolContext` を通じて秘匿処理された画面を観察できます。
+この例では、ピクセルが利用できる場合に、マスクされたスクリーンショットをレポートの証拠として保存します。
+
+```ts
+import { randomUUID } from 'node:crypto';
+import { defineTool, getToolContext } from 'e2e/agent';
+import { tool } from 'ai';
+import { z } from 'zod';
+
+const captureEvidence = defineTool(
+  tool({
+    description: 'Save a screenshot as evidence in the report',
+    inputSchema: z.object({}),
+    execute: async (_input, executionOptions) => {
+      const context = getToolContext(executionOptions);
+      const observation = await context.observe({ pixels: true });
+      const pixels = observation.pixels;
+      if (pixels === undefined) {
+        return { withheld: observation.pixelsWithheld ?? 'UNSUPPORTED_CAPABILITY' };
+      }
+      const id = await context.attachScreenshot(pixels, `evidence-${randomUUID()}`);
+      return { evidence: id };
+    },
+  }),
+  { mutates: false },
+);
+```
+
+- `observe()` は、秘匿処理されたテキストのスナップショットを返します。組み込みエージェントの
+  ルールに従い、`tree: true` を指定するとノードツリーが、`pixels: true` を指定すると
+  マスクされたスクリーンショットが追加されます。
+- `mutates: true` のツールでは、`observe()` は `POLICY_DENIED` で失敗します。
+  観察は別の読み取り専用ツールで行ってください。
+- `attachScreenshot(pixels, label)` は、画像をステップのアーティファクトに追加し、
+  そのアーティファクト ID を返します。同じラベルを再利用すると、以前の画像が上書きされます。
+
+## ノードの計算済みスタイルを読み取る
+
+読み取り専用のツールでは、`context.read` を使って、Web エンジン上で一覧にあるノードの
+レンダリング後のスタイルを測定できます。
+
+```ts
+const context = getToolContext(executionOptions);
+await context.observe();
+const result = await context.read({ id: nodeId }, {
+  style: ['color', 'font-weight', 'visibility', 'opacity'],
+});
+return result.style;
+```
+
+最新の観察で得たノードの ID を渡します。結果には要求したプロパティだけが含まれ、
+シークレットの値はツリーと同様に秘匿処理されます。値はブラウザの計算済み CSS の形式で、
+たとえば赤は `rgb(255, 0, 0)` になります。
+
+プロパティは [計算済みスタイルの許可リスト](/reference/engine#rendered-node-properties) から
+要求してください。カスタムプロパティ、生成コンテンツ、セレクター、ページのコードは拒否されます。
+
+読み取りはステップの期限を使い、観察やアクションと順番に実行されますが、アクションの枠は使いません。
+元の要素の現在の値を測定し、観察を更新したり、値が変わるのを待ったりはしません。
+計算済みの `visibility` と `opacity` は要素の CSS を表すもので、別の要素がその要素を覆っているか、
+祖先要素によって見えなくなっているかどうかは表しません。
+
+| エラー | 発生するタイミング |
+| --- | --- |
+| `POLICY_DENIED` | `mutates: true` のツールが `read` を呼び出した場合、またはモバイルエンジンのようにエンジンに `readStyle` メソッドがない場合。 |
+| `INVALID_ARGUMENT` | オプションまたはプロパティ名が無効な場合。 |
+| `LOCATOR_NOT_FOUND` | セマンティックな観察が存在しない場合、最新の観察にその ID が含まれていない場合、または要素が切り離された場合。読み取る前に再度観察してください。 |
+| `STEP_TIMEOUT` | 期限時点でのエンジンのタイムアウトを含め、読み取りがステップの残り時間を使い切った場合。読み取りのエラーを catch しても、ステップを成功させることはできません。 |
+
+スタイルの読み取りができないターゲットをスキップするには、テストに `requires: ['computed-style']` を指定します。
+
+## デバイスツールキット
+
+`@e2e-dev/mobile` には、`open_app`、`swipe`、`alert` を含む既製のツールパック
+`mobileTools` があります。スプレッドで展開して、その横に独自のツールを追加します。
+
+```ts
+tools: { ...mobileTools(iphone, pixel), seedCart },
+```
+
+セットアップについては [エージェントツール](/mobile#agent-tools) を参照してください。
+生のドライバーセッションが必要な独自のツールは、
+[`unstable_deviceSession`](/reference/mobile#unstable_devicesession) から
+実行中のデバイスのクライアントを取得します。
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="カスタムエグゼキューター" icon="gears" href="/executors">
+    プロンプトや判断ループを置き換えます。
+  </Card>
+  <Card title="エージェントステップの仕組み" icon="stairs" href="/agent-steps">
+    モデルに見えるものと、モデルが行えること。
+  </Card>
+</CardGroup>

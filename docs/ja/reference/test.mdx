@@ -1,0 +1,904 @@
+---
+title: test
+description: テスト、セットアップテスト、グループ、フック、オプション、フィクスチャ。
+"og:image": "https://e2e.com/docs/images/og/reference/test.png?v=d1ad3b01c3"
+"twitter:image": "https://e2e.com/docs/images/og/reference/test.png?v=d1ad3b01c3"
+---
+
+`test` はテスト、セットアップテスト、グループ、フックを宣言します。宣言は、
+テストファイルがインポートされている間に同期的に実行されます。フィクスチャを
+追加するには `test.extend` を、登録時または本体の実行中にテストをスキップするには
+`test.skip` を使います。
+
+```ts title="tests/checkout.e2e.ts"
+import { beforeEach, describe, expect, test } from 'e2e';
+
+describe('checkout', { tags: ['billing'] }, () => {
+  beforeEach(async ({ app }) => {
+    await app.open('/checkout');
+  });
+
+  test('pays with a saved card', { retries: 2 }, async ({ screen }) => {
+    await screen.getByRole('button', 'Pay').tap();
+    await expect(screen.getByText('Payment received')).toBeVisible();
+  });
+});
+```
+
+## リファレンス
+
+### メンバー
+
+| メンバー | 戻り値 |
+| --- | --- |
+| [`test`](#test) | `TestCase` |
+| [`test.skip`](#test-skip) | `TestCase \| void` |
+| [`test.fail`](#test-fail) | `TestCase \| void` |
+| [`test.only`](#test-only) | `TestCase` |
+| [`test.setup`](#test-setup) | `TestCase` |
+| [`test.extend`](#test-extend) | `TestAPI` |
+| [`describe`](#describe) | `void` |
+| [フック](#hooks) | `void` |
+
+`describe` と 4 つのフックはトップレベルのエクスポートでもあり、
+`test.describe`、`test.beforeEach` などと同じ関数です:
+`import { describe, beforeEach, test } from 'e2e'`。
+
+- `e2e` からインポートしたテストごとのフックは、コアのフィクスチャで型付けされます。
+- `@e2e-dev/web` と `@e2e-dev/mobile` は、それぞれの `browser` または `device`
+  フィクスチャで型付けされた `test`、`describe`、4 つのフックすべてを
+  エクスポートしているため、テストファイルは 1 つのインポートから登録できます。
+- 独自のフィクスチャで拡張した `test` は、`test.beforeEach` を通じて
+  それらのフィクスチャを参照できるフックを登録します。
+
+モジュールの評価の外でテスト、グループ、フックを登録すると
+`COLLECTION_ERROR` がスローされます。完全な宣言は[型](#types)にあります。
+
+#### `test`
+
+[オプション](#options)の有無にかかわらず、1 つのテストを登録します。
+
+```ts
+import { describe, test } from '@e2e-dev/web';
+import { expect } from 'e2e';
+
+test('app opens', async ({ app, browser }) => {
+  await app.open();
+  await expect(browser).toHaveURL('/');
+});
+
+test('checks out', { tags: ['billing'], retries: 2, timeout: 60_000 }, async ({ app }) => {
+  await app.open('/checkout');
+});
+```
+
+テストまたはグループのタイトルは、NFC 正規化後に 1 〜 512 UTF-8 バイトで、
+NUL 文字を含まないものです。
+
+| スロー | 条件 |
+| --- | --- |
+| `COLLECTION_ERROR` | 1 つのファイル内の 2 つのテストが同じタイトルパス(グループのタイトル、続いてテスト自身のタイトル)を共有している。 |
+
+#### `test.skip`
+
+スキップされるテストを登録するか、実行中のテストをスキップします。
+
+```ts
+test.skip('exports a PDF', async ({ app }) => {}); // at registration
+test.skip(organizations.length < 2, 'a single organization'); // inside a body
+test.skip('not on this tenant'); // inside a body, always
+```
+
+- スキップされたテストは、デフォルトでは終了コードに影響しません。
+- オプションによって収集時にスキップするには、[`skip`](#skip) オプションを
+  使います。
+- 登録時には `TestCase` を返し、本体内では `void` を返します。
+
+機能フラグが無効になっている場合など、実行時に判明する条件については、
+テスト内で `test.skip(condition, reason)` を呼び出します:
+
+```ts
+test('switches organizations', { session: 'admin' }, async ({ app, agent }) => {
+  const organizations = await listOrganizations();
+  test.skip(organizations.length < 2, 'the demo tenant has a single organization');
+  await app.open('/backend');
+  await agent.act(`switch to the organization "${organizations[1].name}"`);
+});
+```
+
+- 条件が true の場合、Playwright と同様に呼び出しがスローします。呼び出しより
+  後は何も実行されません。
+- それより前に失敗がなければ、テストは `reason` とともに `skipped` として報告され、
+  リトライされません。
+- それより前のステップは、実行されたとおりにレポートに残ります。
+- 呼び出しの前に失敗した `expect.soft` は、Playwright と同様に試行を失敗させます。
+  試行は `failed` となり、ソフトな失敗がエラーとして、スキップの理由が `skip` に
+  記録されます。他の失敗と同様にリトライされます。
+- フックとフィクスチャのティアダウンは引き続き実行されます。
+- 条件が前提条件である場合は、どのステップよりも前に最初に呼び出してください。
+- 失敗した試行の後、リトライでスキップされた場合、テストは `skipped` になります。
+  CLI はそのテストを元のエラーとともに `Skipped After Failure` の下に一覧表示します。
+  その場合に実行を終了コード 1 で失敗させるには、
+  [`failOnSkippedFailure: true`](/reference/config) を設定します。デフォルトは
+  `false` です。
+
+| スロー | 条件 |
+| --- | --- |
+| `INVALID_ARGUMENT` | セットアップテスト内で呼び出された。他のテストがそのセッションに依存しているため、セットアップテストはスキップできません。 |
+| `COLLECTION_ERROR` | テスト本体の外での条件付きの形式。 |
+
+#### `test.fail`
+
+失敗することが想定されるテストを登録するか、実行中のテストをマークします。
+
+```ts
+test.fail('shows the cart badge', async ({ app, screen }) => {}); // at registration
+test.fail(platform === 'web', 'tap on a display: contents element'); // inside a body
+test.fail('known gap'); // inside a body, always
+test('exports a PDF', { fail: 'PDF export is broken' }, async ({ app }) => {}); // by option
+```
+
+- 呼び出しの後も本体は実行を続けます。`beforeEach` フックでもテストを
+  マークできます。
+- アサーションの失敗、アクションの失敗、スローされたエラー、またはタイムアウトに
+  よって、テストは `passed` になります。レポートには理由とエラーが残ります。
+- 合格すると、テストは `UNEXPECTED_PASS` で `failed` になります。原因が修正されたら
+  マークを削除してください。
+- インフラストラクチャのエラー、中断、失敗した `beforeAll` または `afterAll`、
+  `INVALID_ARGUMENT` のような API の誤用は、引き続きテストを失敗させます。
+- 想定どおりの失敗はリトライされません。想定外の合格はリトライされます。
+- スキップはマークより優先されます。
+
+| スロー | 条件 |
+| --- | --- |
+| `INVALID_ARGUMENT` | セットアップテスト、シリアルグループのメンバー、`afterEach` フック、またはフィクスチャのティアダウンでの true の条件。 |
+| `COLLECTION_ERROR` | テスト本体の外での条件付きの形式、またはシリアルグループ内の `fail` オプション。 |
+
+#### `test.only`
+
+フォーカスされたローカルテストを 1 つ登録します。
+
+```ts
+test.only('pays', async ({ app }) => {
+  await app.open('/checkout');
+});
+```
+
+他のテストは `filtered` として報告されます。フォーカスされたテストを含む CI の
+実行は `ONLY_IN_CI` で失敗します。
+
+#### `test.setup`
+
+保存するセッションを宣言するセットアップテストを登録します。セットアップテストは
+各セッションをちょうど 1 回保存する必要があります。
+
+```ts
+import { credentials } from 'e2e';
+
+test.setup('authenticate', { sessions: ['member'] }, async ({ app, screen, session }) => {
+  await app.open('/login');
+  await screen.getByLabel('Email').fill(credentials.user('member').username);
+  await screen.getByLabel('Password').fill(credentials.user('member').password);
+  await screen.getByRole('button', 'Sign in').tap();
+  await session.save('member');
+});
+```
+
+- `test.setup` は `describe` の中ではなく、トップレベルに置く必要があります。
+- [`sessions`](#sessions) オプションで名前を宣言します。
+- テストは [`session`](#session) オプションで保存されたセッションを消費します。
+- セットアップの本体は追加のフィクスチャ `session` を 1 つ受け取ります:
+
+```ts
+export interface SetupSession {
+  /** Saves state under a setup-declared name. */
+  save(name: string): Promise<void>;
+}
+```
+
+| スロー | 条件 |
+| --- | --- |
+| `SESSION_CONTRACT` | 実行時に、宣言されたセッションが保存されなかった、または 2 回保存された。 |
+
+#### `test.extend`
+
+より多くのフィクスチャで型付けされた新しい `test` を返します。呼び出し元の
+`test` は変更されません。
+
+```ts
+import { test as base } from 'e2e';
+import type { Device } from '@e2e-dev/mobile';
+
+export const test = base.extend<{ device: Device }>(); // types only
+```
+
+- 引数なしの場合、`extend` は型だけを絞り込みます。エンジンが提供する
+  フィクスチャで型付けされた、実行時には同じ `test` を返します。それらの
+  フィクスチャは実行時には引き続きターゲットのエンジンから解決されます。これにより、
+  グローバルな `declare module` による拡張なしで、デバイス、デスクトップ、
+  または Web のサーフェスを型付けできます。
+- 定義を渡すと、独自のフィクスチャを追加します。
+  [独自のフィクスチャ](#your-own-fixtures)を参照してください。
+
+#### `describe`
+
+オプションの有無にかかわらず、テストのグループを宣言します。
+
+```ts
+import { describe, test } from 'e2e';
+
+describe('checkout', { tags: ['smoke'], serial: true }, () => {
+  test('adds an item', async ({ screen }) => {});
+  test('pays', async ({ screen }) => {});
+});
+```
+
+- グループは、`only` を除いてテストが受け付ける[オプション](#options)に加えて、
+  [`serial`](#serial) を受け付けます。
+- 本体は同期的です。
+
+| スロー | 条件 |
+| --- | --- |
+| `COLLECTION_ERROR` | `async` の本体。型エラーにもなります。 |
+| `COLLECTION_ERROR` | 本体内の `test.setup`。 |
+
+### フック
+
+| フック | 実行されるタイミング |
+| --- | --- |
+| [`beforeEach`](#beforeeach) | 各テスト試行の前 |
+| [`afterEach`](#aftereach) | 各テスト試行の後 |
+| [`beforeAll`](#beforeall) | スイートインスタンスごとに 1 回 |
+| [`afterAll`](#afterall) | スコープの最後のテストの後 |
+
+フックの順序はファイル内の位置ではなくスコープのネストに従うため、テストの後に
+宣言されたフックもそのテストに適用されます。
+
+#### `beforeEach`
+
+テスト試行のセットアップフックを登録します。
+
+```ts
+test.beforeEach(async ({ app }) => {
+  await app.open('/');
+});
+```
+
+- 最も外側のグループから実行され、グループ内では宣言順に実行されます。
+- `beforeEach` と本体はテストのタイムアウトを共有します。
+- テストのフィクスチャを受け取ります。
+
+#### `afterEach`
+
+テスト試行のティアダウンフックを登録します。
+
+```ts
+test.afterEach(async ({ app }) => {
+  await app.screenshot('after');
+});
+```
+
+- 最も内側のグループから、宣言と逆の順序で実行されます。失敗やタイムアウトの後も
+  実行されます。
+- 各 `afterEach` フックは、動作するフィクスチャとともに独自の `cleanupTimeout` の
+  予算を得るため、本体がタイムアウトした後でもティアダウンでアプリを操作できます。
+- テストのフィクスチャを受け取ります。
+
+#### `beforeAll`
+
+スイートインスタンスのセットアップフックを登録します。スイートインスタンスごとに
+1 回、スコープに最初に入ったときに実行されます。
+
+```ts
+beforeAll(async ({ platform }) => {
+  await seedDatabase(platform);
+});
+```
+
+モジュールはリトライ、シリアルグループ、セットアップテストのたびに再インポート
+されるため、`beforeAll` はそれぞれで再度実行されます。受け取るフィクスチャは
+`platform` だけです。
+
+| スロー | 条件 |
+| --- | --- |
+| `HOOK_FAILED` | フックがスローした。スイートのテストは原因 `hook-failed` でスキップされます。シリアルグループ内では、残りのすべてのメンバーをスキップし、リトライなしでグループを失敗させます。 |
+
+#### `afterAll`
+
+スイートインスタンスのティアダウンフックを登録します。レルム内でスコープの最後の
+テストが完了するとすぐに実行されます。
+
+```ts
+afterAll(async () => {
+  await resetDatabase();
+});
+```
+
+失敗によって破棄されるレルムでは、`beforeAll` が開始されたすべてのスコープについて
+`afterAll` が実行されます。受け取るフィクスチャは `platform` だけです。スローは
+[`beforeAll`](#beforeall) と同様に `HOOK_FAILED` になります。
+
+#### ブロックされたイベントループ
+
+ワーカーのイベントループをブロックするテスト(フィクスチャ、`beforeEach`、本体、
+または `afterEach` 内の `while (true) {}`)は、そのワーカー内のすべてのタイマーを
+停止させるため、ワーカーはそのテストをタイムアウトさせることができません。
+
+- テストのタイムアウトから `cleanupTimeout`(最低 5 秒)が経過してもワーカーが
+  応答しない場合、ランナーはワーカーを強制終了します。
+- その試行は、それ以前の試行の後に、`TEST_TIMEOUT` でアーティファクトなしの
+  `timed-out` として報告され、リトライされません。
+- ファイルの残りは新しいワーカーで実行されます。シリアルグループでは、それ以降の
+  メンバーはスキップされます。
+- ブロックする `beforeAll` または `afterAll` は、引き続き実行をハングさせます。
+
+<Note>
+テストの開始時にデバッガーがアタッチされているワーカー(エディターの自動
+アタッチ、または `NODE_OPTIONS=--inspect=0`)はこの方法で強制終了されることが
+ないため、ブレークポイントで一時停止したままにできます。インライン設定や
+メモリ上のテストを使うプログラムによる実行は、ランナー自身のプロセスで実行され、
+強制終了するワーカーがないため、ブロックされたイベントループは実行をハングさせます。
+</Note>
+
+### オプション
+
+| オプション | 型 | デフォルト |
+| --- | --- | --- |
+| [`timeout`](#timeout) | `number` | `config.timeout` |
+| [`retries`](#retries) | `number` | `config.retries` |
+| [`tags`](#tags) | `readonly string[]` | - |
+| [`skip`](#skip) | `boolean \| string` | - |
+| [`fail`](#fail) | `boolean \| string` | - |
+| [`only`](#only) | `boolean` | - |
+| [`platforms`](#platforms) | `readonly string[]` | - |
+| [`requires`](#requires) | `readonly Capability[]` | - |
+| [`session`](#session) | `string` | - |
+| [`agentContext`](#agentcontext) | `string` | - |
+| [`agent`](#agent) | `string \| readonly string[]` | 実行のエージェント |
+| [`trace`](#trace) | `RecordingMode` | 実行の設定 |
+| [`video`](#video) | `RecordingMode` | 実行の設定 |
+| [`serial`](#serial) | `boolean` | - |
+| [`sessions`](#sessions) | `readonly string[]` | 必須 |
+
+`test` は `serial` と `sessions` 以外のすべてのオプションを受け付けます。
+`describe` は `only`、`fail`、`sessions` 以外のすべてのオプションを受け付けます。
+`test.setup` は `sessions` を必須とし、`session`、`only`、`skip`、`fail` を
+受け付けません。
+
+解決順序は、テスト、最も近いグループ、外側のグループ、設定、組み込みのデフォルトの
+順です。[シリアルグループ](#serial)内では、グループの `retries`、`trace`、`video`
+が適用されます。
+
+| スロー | 条件 |
+| --- | --- |
+| `COLLECTION_ERROR` | その呼び出しが受け付けないオプションキー(`{ timout: 1000 }`)。エラーは、タイプミスの可能性が高い場合は最も近い既知のキーを、それ以外の場合は呼び出しが受け付けるすべてのキーを示します。 |
+
+#### `timeout`
+
+試行の期限(ミリ秒)。最も内側の値が優先されます。
+
+```ts
+test('imports a large file', { timeout: 300_000 }, async ({ app }) => {}); // default: config.timeout
+```
+
+`timeout` は 2147483647(約 24 日)以下の正の安全な整数である必要があります。
+
+#### `retries`
+
+失敗したテストをリトライする回数。
+
+```ts
+test('checks out', { retries: 2 }, async ({ app }) => {}); // default: config.retries
+```
+
+0 から 10 までの整数です。
+
+#### `tags`
+
+`--tag` で選択に使われるタグ。すべての階層のタグが和集合としてまとめられます。
+
+```ts
+describe('checkout', { tags: ['billing', 'smoke'] }, () => {});
+```
+
+タグは互いに異なる名前で、空のものはなく、カンマを含まず、先頭や末尾に空白を
+持ちません。
+
+#### `skip`
+
+収集時にテストをスキップします。文字列は理由です。いずれかの階層が truthy で
+あればスキップされます。スキップの理由(実行時の `test.skip` の理由を含む)は、
+報告の前にシークレットが伏せ字にされ、サニタイズされ、8,192 UTF-8 バイトに
+制限されます。
+
+```ts
+test('exports a PDF', { skip: 'PDF export is off on staging' }, async ({ app }) => {});
+```
+
+#### `fail`
+
+テストが失敗することを想定します。[`test.fail`](#test-fail) を参照してください。
+文字列は理由です。シリアルグループ内では使用できません。
+
+```ts
+test('exports a PDF', { fail: 'PDF export is broken' }, async ({ app }) => {});
+```
+
+#### `only`
+
+テストをローカルでフォーカスします。CI では `ONLY_IN_CI` で拒否されます。
+
+```ts
+test('pays', { only: true }, async ({ app }) => {});
+```
+
+#### `platforms`
+
+テストを実行するプラットフォーム。他のターゲットではスキップされます。最も内側の
+値が優先されます。
+
+```ts
+test('uses Face ID', { platforms: ['ios'] }, async ({ app }) => {});
+```
+
+#### `requires`
+
+ターゲットが持つ必要のある機能。いずれかを欠くターゲットでは、選択時にテストが
+スキップされます。最も内側の値が優先されます。
+
+```ts
+test('onboarding asks for the camera', { requires: ['native-app'] }, async ({ app, agent }) => {
+  await app.open();
+  await agent.assert('The app asks for camera access');
+});
+```
+
+受け付ける値:
+
+- ターゲットのエンジンのハーネス機能: `observation`、`actions`、`location`、
+  `pointer`、`keyboard`、`computed-style`、`state`、`artifacts`。
+- 提供されるフィクスチャごとに 1 つ: `browser`、`device`。
+  [エンジンの契約](/reference/engine#engine)を参照してください。
+- ターゲットが宣言するアプリの種類: `app.url` の場合は `browser`、
+  `app.bundleId` または `app.appPath` の場合は `native-app`。
+
+#### `session`
+
+セットアップテストが保存したセッションで、本体の実行前に復元されます。
+
+```ts
+test('sees the dashboard', { session: 'member' }, async ({ app }) => {});
+```
+
+[`test.setup`](#test-setup) を参照してください。
+
+#### `agentContext`
+
+エージェントのステップに追加するコンテキスト。階層は最も外側から順に連結されます。
+
+```ts
+describe('pricing', { agentContext: 'Prices are shown in EUR.' }, () => {});
+```
+
+#### `agent`
+
+このテストまたはグループが、実行のエージェントの代わりに使う設定済みの
+エージェント(`agents.<name>`)。
+
+```ts
+test('checks out', { agent: ['fast', 'smart'] }, async ({ agent }) => {}); // one result per agent
+```
+
+- リストを指定すると、指定したエージェントごとにテストを 1 回ずつ実行し、それぞれ
+  1 つの結果になります。
+- 最も内側の値が優先されます。呼び出し自身の `agent` オプションはこれより
+  優先されます。
+- `--agent` はリストを両方が指定する名前に絞り込み、フラグが指定していない固定を
+  上書きすることはありません。
+- セットアップテストはターゲットごとに 1 回実行されるため、固定できるエージェントは
+  最大 1 つです。
+
+| スロー | 条件 |
+| --- | --- |
+| `COLLECTION_ERROR` | 選択時、どのテストも実行される前に: `agents` が定義していない名前。 |
+
+#### `trace`
+
+実行の設定の代わりに、テストがトレースページを保持するかどうか。
+
+```ts
+test('checkout', { trace: 'retain-on-failure' }, async ({ agent }) => {});
+```
+
+- 設定の `trace` と同じ[記録モード](/reference/config#recording)を受け付けます:
+  `off`、`on`、`retain-on-failure`、`on-first-retry`、`on-all-retries`。
+- テストまたはグループ自身の値は、`--trace`、ターゲットの値、設定の値より
+  優先されます。何も記録しない実行で 1 つのテストだけ記録することも、すべてを
+  記録する実行で 1 つのテストだけ除外することもできます。
+
+#### `video`
+
+実行の設定の代わりに、テストのどの試行でビデオを記録するか。
+
+```ts
+test('checkout', { video: 'on' }, async ({ agent }) => {
+  await agent.act('Buy the first product in the catalog');
+});
+```
+
+- `trace` や設定の `video` と同じ[記録モード](/reference/config#recording)を
+  受け付けます。
+- テストまたはグループ自身の値は、`--video`、ターゲットの値、設定の値より
+  優先されます。
+
+| スロー | 条件 |
+| --- | --- |
+| `UNSUPPORTED_ARTIFACT` | どのテストも開始される前に、テストを示して: モードがいずれかの試行で記録を行うが、ターゲットのエンジンがビデオを記録できない。 |
+
+#### `serial`
+
+`describe` 専用です。アプリの状態を共有する、順序付けられた 1 つのリトライ単位
+としてグループを実行します。
+
+```ts
+describe('checkout', { serial: true }, () => {
+  test('adds an item', async ({ screen }) => {});
+  test('pays', async ({ screen }) => {});
+});
+```
+
+- グループはシークレットの状態も共有します。あるメンバーが解決した値は、
+  グループの試行の残りの間、伏せ字のままです。リトライは新しい状態から始まります。
+- メンバーは、シリアルな `describe` またはそれを囲むグループの `trace` と
+  `video` を使います。グループはグループの試行ごとに 1 つのビデオを記録します。
+- ファイルの読み込みに失敗したり、セッションの起動に失敗したりして、グループの
+  試行が開始されないことがあります。その場合、最初のメンバーがそのエラーで失敗し、
+  残りは原因 `serial-predecessor-failed` でスキップされます。起動中に実行が
+  中断された場合は、代わりにすべてのメンバーがスキップされます。
+- リトライが中断された場合、またはメンバーに到達しなかった場合、メンバーは
+  それらを実行した最後の試行の判定と所要時間を保持します。
+- 終了コードは、他のテストと同様にエラーのカテゴリーに従います。
+
+| スロー | 条件 |
+| --- | --- |
+| `COLLECTION_ERROR` | メンバーが `retries`、`trace`、`video`、`session`、`platforms`、`requires`、`skip`、`only`、またはネストした `serial` を設定している。 |
+
+#### `sessions`
+
+`test.setup` 専用です。セットアップテストが保存する必要のあるセッション名。
+
+```ts
+test.setup('authenticate', { sessions: ['member', 'admin'] }, async ({ session }) => {});
+```
+
+一意な名前からなる、静的で空でない配列です。各名前は
+`/^[A-Za-z0-9_.-]{1,128}$/` に一致します。[`test.setup`](#test-setup) を
+参照してください。
+
+### フィクスチャ
+
+| フィクスチャ | 型 |
+| --- | --- |
+| [`agent`](/reference/agent) | `Agent` |
+| [`app`](/reference/app) | `App` |
+| [`screen`](/reference/screen) | `Screen` |
+| `platform` | `string` |
+| [`session`](#test-setup) | `SetupSession` |
+
+`agent`、`app`、`screen` はテスト本体、`beforeEach`、`afterEach` で使えます。
+`platform` はすべてのフックでも使え、`session` は `test.setup` の本体でのみ
+使えます。[`TestFixtures`](#testfixtures) でそれぞれを説明しています。
+
+それ以外はすべて、ターゲットのエンジンが提供するフィクスチャか、
+[独自のフィクスチャ](#your-own-fixtures)です。`@e2e-dev/web` は
+[`browser`](/reference/web) を提供し、デバイスエンジンは `device` を提供します。
+
+| スロー | 条件 |
+| --- | --- |
+| `UNSUPPORTED_CAPABILITY` | エンジンが提供しないフィクスチャをテストが使おうとした。そのようなテストを代わりに選択時にスキップするには、`requires: ['browser']` を宣言してください。 |
+
+<Note>
+上記のフィクスチャは遅延評価されます。パラメーターリストで分割代入すると、本体の
+最初の文より前に取得されます。[独自の
+フィクスチャ](#your-own-fixtures)は遅延評価されません。
+</Note>
+
+#### 独自のフィクスチャ
+
+`test.extend(fixtures)` は、各テストの前にセットアップされ、後で(失敗した後も
+含めて)クリーンアップされるリソースを定義します。各フィクスチャ関数では、
+`await use(value)` より前のコードがリソースをセットアップします。テストは `value`
+を受け取り、`use` の後のコードがリソースをティアダウンします。完全なスイートを
+含むガイドについては、[フィクスチャの作成](/fixtures)を参照してください。
+
+```ts
+import { test as base } from '@e2e-dev/web';
+
+export const test = base.extend<{ workspace: Workspace }>({
+  workspace: async ({ browser }, use) => {
+    const workspace = await createWorkspace();
+    await signIn(browser, workspace);
+    await use(workspace); // the hooks and the body run here
+    await workspace.cleanup(); // teardown, after the body even when it failed
+  },
+});
+
+test('renames the workspace', async ({ workspace, screen }) => {
+  await screen.getByLabel('Name').fill(`${workspace.name} (renamed)`);
+});
+```
+
+定義は、同じ呼び出し内の兄弟ではなく、拡張元の `test` のフィクスチャに対して
+型付けされます。別のフィクスチャを必要とするフィクスチャは、チェーンした 2 つ目の
+`extend` に置きます。`base.extend({ a }).extend({ b })` では、`b` はすでに `a` を
+持つフィクスチャオブジェクトを受け取ります。
+
+試行ごとの流れ:
+
+1. テストの登録に使われた `extend` チェーン内の各定義が、エンジンのフィクスチャの
+   後に宣言順で実行され、`use` を呼ぶところまで進みます。テストがその
+   フィクスチャを指定しているかどうかに関係なく実行されます。ページを開いたり
+   アプリの状態を変更したりするフィクスチャは、その `test` のすべてのテストで
+   それを行います。そのため、テストごとに異なるセットアップが必要なファイルでは、
+   異なる `extend` チェーンを通じてテストを登録します。セットアップはテストの
+   `timeout` に含まれます。失敗は、どの `beforeEach` フックも実行される前に、
+   フェーズ `beforeEach` で報告されます。
+2. `beforeEach` フック、本体、`afterEach` フックが同じフィクスチャオブジェクトで
+   実行されます。フィクスチャのセットはテスト自身のチェーンです。`base` を通じて
+   登録されたテストの前後で `workspace` を読むフックは、
+   `UNSUPPORTED_CAPABILITY` で失敗します。
+3. ティアダウンは、本体が合格したかどうかに関係なく、最後の `afterEach` の後に
+   逆順で実行され、それぞれが独自の `cleanupTimeout` の予算を持ちます。そこでの
+   エラーは、合格した試行をフェーズ `afterEach` で失敗させ、本体が失敗した後で
+   あれば `secondaryErrors` に加わります。
+
+| 誤り | 失敗のしかた |
+| --- | --- |
+| 関数からなるプレーンなオブジェクトではない値、空の名前、コアの名前(`agent`、`app`、`screen`、`platform`、`session`)、またはチェーン内の以前の `extend` が定義した名前 | インポート時に、フィクスチャを示す `COLLECTION_ERROR` |
+| ターゲットのエンジンが提供する名前(Playwright ターゲットでの `browser`) | 試行が `beforeEach` で `TEST_SETUP_FAILED` |
+| `use` を呼ばずに返る定義 | 試行が `beforeEach` で `TEST_SETUP_FAILED` |
+| `use` を 2 回呼ぶ定義 | 試行がティアダウン時に `TEST_SETUP_FAILED` |
+| `use` の前にスローする定義 | 試行が `beforeEach` でそのエラー |
+| `use` の後にスローする定義 | 試行が `afterEach` でそのエラー |
+
+<Note>
+テストの `timeout` に達した本体やフックはキャンセルされずに放棄されるため、
+まだ実行中である可能性がある間にティアダウンが始まります。このように放棄された
+セットアップが後で `use` に到達すると、即座に解決されます。そのティアダウンは
+実行から切り離されて実行されるため、割り当てたものは引き続き解放されます。
+放棄されたセットアップやフックが完了した後に、以降のフィクスチャ、フック、
+テスト本体が開始されることはありません。
+</Note>
+
+## 型
+
+### `TestAPI`
+
+```ts
+export interface TestAPI<Fixtures = TestFixtures> {
+  /** Registers one test synchronously during module evaluation. */
+  (title: string, fn: TestFn<Fixtures>): TestCase;
+  /** Registers one configured test synchronously during module evaluation. */
+  (title: string, options: TestOptions, fn: TestFn<Fixtures>): TestCase;
+  /** Registers one skipped test. */
+  skip(title: string, fn: TestFn<Fixtures>): TestCase;
+  /**
+   * Inside a running test: skips it when `condition` is true (or always,
+   * with no condition) by throwing, so nothing after the call runs. The
+   * attempt is reported `skipped` with `reason`; steps that already ran stay
+   * in the report without deciding the status, and teardown still runs. A
+   * setup test cannot skip: its sessions are owed.
+   * Outside a test body this form is `COLLECTION_ERROR`; use the `skip`
+   * option to skip at collection.
+   */
+  skip(condition: boolean, reason?: string): void;
+  skip(reason?: string): void;
+  /** Registers one test that is expected to fail. */
+  fail(title: string, fn: TestFn<Fixtures>): TestCase;
+  /**
+   * Inside a running test: marks it expected to fail when `condition` is
+   * true (or always, with no condition). The body keeps running. A test
+   * failure then passes the test, keeping the error and `reason` in the
+   * report; a pass fails it with `UNEXPECTED_PASS`. Infrastructure failures
+   * and interrupts are not covered. A setup test or a serial group member
+   * cannot be marked. Outside a test body this form is `COLLECTION_ERROR`;
+   * use `test.fail(title, fn)` or the `fail` option to mark at collection.
+   */
+  fail(condition: boolean, reason?: string): void;
+  fail(reason?: string): void;
+  /** Registers one focused local test. CI rejects focused tests. */
+  only(title: string, fn: TestFn<Fixtures>): TestCase;
+  /** Registers one setup test with statically declared session outputs. */
+  setup(title: string, options: SetupOptions, fn: SetupFn<Fixtures>): TestCase;
+  /**
+   * Returns the same runtime `test`, typed with an engine's contributed
+   * fixtures. A pure type refinement, the fixtures still resolve from the
+   * target's engine at runtime, so a project types its device/desktop/web
+   * surface without a global `declare module` augmentation:
+   *
+   *   export const test = base.extend<{ device: Device }>();
+   */
+  extend<Extra>(): TestAPI<Fixtures & Extra>;
+  /**
+   * Returns a new `test` whose registrations carry these fixture
+   * definitions on top of the ones it already had. Each attempt sets them up
+   * in declaration order after the engine's fixtures, runs the hooks and the
+   * body with them, and tears them down in reverse order after `afterEach`:
+   *
+   *   export const test = base.extend<{ workspace: Workspace }>({
+   *     workspace: async ({ browser }, use) => {
+   *       const workspace = await createWorkspace();
+   *       await use(workspace);
+   *       await workspace.cleanup();
+   *     },
+   *   });
+   */
+  extend<Extra>(fixtures: FixtureDefinitions<Fixtures, Extra>): TestAPI<Fixtures & Extra>;
+  /** Declares a group synchronously. */
+  describe<Result>(title: string, body: SynchronousBody<Result>): void;
+  /** Declares a configured group synchronously. */
+  describe<Result>(
+    title: string,
+    options: DescribeOptions,
+    body: SynchronousBody<Result>,
+  ): void;
+  /** Registers a test-attempt setup hook. */
+  beforeEach(fn: TestHookFn<Fixtures>): void;
+  /** Registers a test-attempt teardown hook. */
+  afterEach(fn: TestHookFn<Fixtures>): void;
+  /** Registers a suite-instance setup hook. */
+  beforeAll(fn: SuiteHookFn): void;
+  /** Registers a suite-instance teardown hook. */
+  afterAll(fn: SuiteHookFn): void;
+}
+
+export const test: TestAPI;
+export const describe: TestAPI['describe'];
+export const beforeEach: TestAPI['beforeEach'];
+export const afterEach: TestAPI['afterEach'];
+export const beforeAll: TestAPI['beforeAll'];
+export const afterAll: TestAPI['afterAll'];
+```
+
+### `TestOptions`
+
+```ts
+export interface TestOptions {
+  /** Attempt deadline in milliseconds; defaults to `config.timeout`. Innermost wins. */
+  timeout?: number;
+  /** Retries, 0 through 10; defaults to `config.retries`. Inside a serial group the group's value applies. */
+  retries?: number;
+  /** Tags for `--tag`: distinct names, none blank, with no comma and no leading or trailing whitespace; every layer's tags are unioned. */
+  tags?: readonly string[];
+  /** Skips the test; a string is the reason. Any truthy layer skips. */
+  skip?: boolean | string;
+  /**
+   * Expects the test to fail; a string is the reason. A test failure then
+   * passes it, and a pass fails it with `UNEXPECTED_PASS`. Not allowed inside
+   * a serial group.
+   */
+  fail?: boolean | string;
+  /** Focuses the test locally. CI rejects it with `ONLY_IN_CI`. */
+  only?: boolean;
+  /** Platforms the test runs on; other targets skip it. Innermost wins. */
+  platforms?: readonly string[];
+  /** Capabilities the target must have; otherwise the test is skipped at selection. Innermost wins. */
+  requires?: readonly Capability[];
+  /** Session a setup test saved, restored before the body runs. */
+  session?: string;
+  /** Extra context for agent steps; layers are concatenated outermost first. */
+  agentContext?: string;
+  /**
+   * The configured agent (`agents.<name>`) this test or group runs with, in
+   * place of the run's agents. A list runs the test once per agent named, as
+   * one result each. Innermost wins; a call's own `agent` option wins over
+   * it. `--agent` narrows a list to the names both name and never overrides
+   * a pin the flag does not name.
+   */
+  agent?: string | readonly string[];
+  /**
+   * Which of the test's attempts keep a trace, in place of the run's: the
+   * same modes as the config's `trace`. Innermost wins, over `--trace` too;
+   * inside a serial group the group's value applies, since the group runs as
+   * one unit.
+   */
+  trace?: RecordingMode;
+  /**
+   * Which of the test's attempts record a video, in place of the run's:
+   * the same modes as the config's `video`. Innermost wins, over `--video`
+   * too; inside a serial group the group's value applies, since the group
+   * records as one unit. A mode set here is required of the target's engine.
+   */
+  video?: RecordingMode;
+}
+
+export interface DescribeOptions extends Omit<TestOptions, 'only' | 'fail'> {
+  /** Runs the group as one ordered retry unit with shared app state. Nesting one serial group in another is a `COLLECTION_ERROR`. */
+  serial?: boolean;
+}
+
+export interface SetupOptions extends Omit<TestOptions, 'session' | 'only' | 'skip' | 'fail' | 'agent'> {
+  /** Session names this setup test MUST save. */
+  sessions: readonly string[];
+  /** A setup test runs once per target, so it pins at most one agent. */
+  agent?: string;
+}
+```
+
+### `TestFixtures`
+
+```ts
+export interface TestFixtures {
+  /** Agent steps. Acquiring the built-in agent without a configured model is `MODEL_UNAVAILABLE`. */
+  readonly agent: Agent;
+  /** App lifecycle: open, restart, clear state, back, screenshot, recording. */
+  readonly app: App;
+  /** Semantic queries and the actions on their matches. */
+  readonly screen: Screen;
+  /** The target's platform label: `web`, `ios`, `android`, or an engine's own string. */
+  readonly platform: string;
+}
+
+export interface SetupFixtures extends TestFixtures {
+  /** Saves the sessions the setup test declared. */
+  readonly session: SetupSession;
+}
+
+export interface SuiteFixtures {
+  /** The target's platform label: `web`, `ios`, `android`, or an engine's own string. */
+  readonly platform: string;
+}
+```
+
+### `FixtureDefinitions`
+
+```ts
+/**
+ * Defines one fixture: everything before `await use(value)` is its setup,
+ * everything after is its teardown. The body, its hooks, and later fixtures
+ * run while `use` is pending; it resolves once they are done, whether or not
+ * the body failed.
+ */
+export type FixtureFn<Fixtures, Value> = (
+  fixtures: Fixtures,
+  use: (value: Value) => Promise<void>,
+) => Promise<void>;
+
+/**
+ * One definition per fixture `test.extend()` adds. A definition sees the
+ * fixtures of the `test` it extends, not its siblings: a fixture that needs
+ * another one goes in a chained `extend()`. A name the base already has is a
+ * type error (and a `COLLECTION_ERROR` at runtime).
+ */
+export type FixtureDefinitions<Base, Extra> = {
+  readonly [K in keyof Extra]: K extends keyof Base ? never : FixtureFn<Base, Extra[K]>;
+};
+```
+
+### 関数型
+
+```ts
+/** A test body. */
+export type TestFn<Fixtures = TestFixtures> = (fixtures: Fixtures) => void | Promise<void>;
+
+/** A setup test body; `session.save` is the extra fixture. */
+export type SetupFn<Fixtures = TestFixtures> = (
+  fixtures: Fixtures & SetupFixtures,
+) => void | Promise<void>;
+
+/** A `beforeEach` or `afterEach` body. */
+export type TestHookFn<Fixtures = TestFixtures> = (fixtures: Fixtures) => void | Promise<void>;
+
+/** A `beforeAll` or `afterAll` body. */
+export type SuiteHookFn = (fixtures: SuiteFixtures) => void | Promise<void>;
+
+/** A `describe` body. An async body is a type error. */
+export type SynchronousBody<Result> = Extract<Result, PromiseLike<unknown>> extends never
+  ? () => Result
+  : never;
+
+/** Opaque handle of a registered test. */
+export interface TestCase {
+  readonly [testCaseBrand]: true;
+}
+```

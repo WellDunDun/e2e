@@ -1,0 +1,204 @@
+---
+title: MCP サーバー
+description: コーディングエージェントにアプリを操作させ、自分の作業を確認させます。
+"og:image": "https://e2e.com/docs/images/og/mcp-server.png?v=17998906c0"
+"twitter:image": "https://e2e.com/docs/images/og/mcp-server.png?v=17998906c0"
+---
+
+`e2e mcp` は、Claude Code、Codex、Cursor などのコーディングエージェントに、Web、iOS、Android 上のアプリのライブセッションを提供します。
+エージェントは画面を見て、画面を操作し、自分の作業を確認します。
+
+## なぜ重要なのか
+
+| タスク | `e2e mcp` なし | `e2e mcp` あり |
+| --- | --- | --- |
+| テストを書く | ロケーターを推測し、実行し、失敗し、また推測する | フローを辿りながら、確認済みのテスト行と `run_code` で実行した行からテストを書く |
+| UI を変更する | コンパイルが通れば完了 | ページを開いて結果を確認する |
+| バグを再現する | コードから推測する | アプリで手順を辿る |
+| 失敗したテストを修正する | フローをもう一度クリックして辿る | テストを実行し、失敗箇所で止まる |
+| テストスイートを実行する | `e2e run` のためのシェルが必要 | `run_tests` で実行する |
+| PR で変更を見せる | 言葉で説明する | 動画を録画する |
+
+サーバー自体はモデルを必要としません。サーバーが実行するテストでモデルが必要になるのは、
+記録のないエージェントステップだけです。
+
+## セットアップする
+
+[e2e プラグイン](/coding-agents)には、プラグインの e2e リリースに固定された `npx -y e2e@<version> mcp` としてサーバーが含まれています。プロジェクトに別のバージョンの e2e がインストールされていても、そのリリースが実行されます。
+プラグインを使わない場合は、プロジェクトにサーバーを登録します。`e2e init` は、`.mcp.json`（Claude Code）、
+`.cursor/mcp.json`（Cursor）、`.codex/config.toml`（Codex）にサーバーを登録するかどうかを確認します。
+`npx`（Bun プロジェクトでは `bunx`）がインストール済みの e2e バージョンを使うように、プロジェクトの依存関係をインストールし、
+プロジェクトのディレクトリで MCP クライアントを起動してください。手動で登録する場合は次のとおりです。
+
+<Tabs>
+  <Tab title="Claude Code">
+    <CodeGroup>
+    ```bash npm
+    claude mcp add --scope project e2e -- npx e2e mcp
+    ```
+
+    ```bash pnpm
+    claude mcp add --scope project e2e -- pnpm exec e2e mcp
+    ```
+
+    ```bash bun
+    claude mcp add --scope project e2e -- bunx e2e mcp
+    ```
+    </CodeGroup>
+  </Tab>
+  <Tab title="Codex">
+    インストール済みの CLI で `e2e init --yes --skills none --mcp .codex/config.toml` を実行するか、
+    次のエントリを追加します。プロジェクトを信頼し、新しい Codex セッションを開始してください。
+    プロジェクト内で `codex mcp list` を実行すると、登録内容が表示されます。
+
+    ```toml title=".codex/config.toml"
+    [mcp_servers.e2e]
+    command = "npx"
+    args = ["e2e", "mcp"]
+    ```
+  </Tab>
+  <Tab title="Cursor">
+    `.cursor/mcp.json` にサーバーを追加します。`mcpServers` マップを読み取る
+    ほかのクライアントも、同じブロックを受け付けます。
+
+    ```json title=".cursor/mcp.json"
+    {
+      "mcpServers": {
+        "e2e": { "command": "npx", "args": ["e2e", "mcp"] }
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+セッションは、ターゲットにアプリのコマンドがあればそれを起動し、その URL とポートを示します。
+設定はエージェントのシェルではなく、サーバーの環境を読み取ります。
+
+## 設定なしで試す
+
+e2e の設定ファイルがないディレクトリでは、エージェントはセッションを開くときにエンジンを指定します。
+
+```txt
+open_session {engine: "@e2e-dev/web", app: {url: "http://localhost:3000"}}
+```
+
+`run_tests` には引き続き設定が必要です。エンジンのオプション、デバイスプロバイダー、
+エンジンのインストールについては、
+[設定なしで使う](/reference/mcp#without-a-config)を参照してください。
+
+## エージェントに頼む
+
+- 「ログインフォームに Remember me チェックボックスを追加して。e2e を使ってアプリで確認して。」
+- 「アプリでチェックアウトを辿りながら、そのテストを書いて。」
+- 「アプリで issue #123 を再現して、動画を録画して。」
+
+ローカルのブラウザやシミュレーターの様子を見るには、「headed」と付け加えます。
+
+## テスト行の書き方
+
+セッション内の各操作は、その操作を再現するテスト行を返します。
+その行のロケーターは、ライブ画面上でそのコントロールだけに一致したものです。
+
+```text wrap
+Tapped #n31.
+Test line: await screen.getByRole("button", "Sign in").tap();
+```
+
+エージェントはフローを辿りながら、必要な行をテストにコピーします。
+`test_lines` は、それまでのすべての行を順番に、テスト本体の下書きとして返します。
+行がどのように組み立てられるかは [`test_lines`](/reference/mcp#test_lines) を参照してください。
+
+## ロケーターの確認方法
+
+アサーションなど、どの操作も出力しなかった行については、エージェントはまずセッション内でロケーターを試します。
+推測が間違っていれば、テストの実行ではなくその場で失敗します。
+
+```text wrap
+0 nodes match getByLabel("Email").
+A test using this locator would fail with LOCATOR_NOT_FOUND. ...
+
+1 node matches getByRole("button", name: "Sign in").
+Use: screen.getByRole("button", "Sign in")
+```
+
+## テスト行の実行方法
+
+エージェントは、アサーションなど、どの操作も出力しなかった行を、開いているセッションで
+`run_code` を使って実行します。成功した行は `test_lines` の下書きに加わります。
+間違った行は、テストを実行しなくても数秒で失敗します。
+
+```text wrap
+Statement 2 of 2 failed; the one before it passed. Each statement waited at most 5000 ms. ...
+1. passed: await screen.getByLabel('Full name').fill('Grace Hopper');
+2. failed: await screen.getByRole('button', 'Save').tap();
+   LOCATOR_NOT_FOUND: locator matched no nodes within getByRole("button", name: "Save")
+```
+
+サーバーは行を解析するだけで、JavaScript として評価することはありません。
+[`run_code`](/reference/mcp#run_code) を参照してください。
+
+## 失敗したテストを修正する
+
+`open_session {test: "tests/checkout.e2e.ts:12"}` は、セッション内で 1 つのテストを実行し、
+失敗した画面で停止します。エージェントは失敗内容を読み、画面を確認し、テストを編集します。
+
+```text wrap
+Test "a member checks out" (tests/checkout.e2e.ts:12) failed after 30.25s; 8 steps ran.
+LOCATOR_NOT_FOUND: locator matched no nodes within getByLabel("Name")
+At tests/checkout.e2e.ts:20:3
+On screen, closest to what the locator asked for:
+  #n32 textbox "Full name"
+```
+
+その画面からの各操作は[テスト行](#how-it-writes-a-test-line)を出力し、`run_code` は
+そこで修正した行を実行します。エージェントは、失敗した行の代わりにそれらの行をテストに入れます。
+
+編集したテストを再実行するには、エージェントはセッションを閉じ、同じ `test` で新しいセッションを開きます。
+エージェントステップは `e2e run` と同様にキャッシュからリプレイされます。
+何が実行されるかと制限については、[テストの実行](/reference/mcp#running-a-test)を参照してください。
+
+## セッションと並行してテストを実行する
+
+セッションはテスト結果を書き込みません。また、リプレイキャッシュを使うのは、
+`open_session {test}` で実行するテストだけです。エージェントは、`e2e run` と同じ実行である
+[`run_tests`](/reference/mcp#run_tests) でテストスイートを実行し、
+実行をセッションと並行して行える場合は、実行の間もセッションを開いたままにします。実行が失敗した後は、
+新しいセッションを開く代わりに、そのセッションで失敗した画面に移動します。
+
+Web では、セッションと並行した実行はターゲットの `app` によって次のように変わります。
+
+| ターゲットの `app` | セッションが開いている間の実行 |
+| --- | --- |
+| `command` なし | 両方とも、あなたが起動したアプリを使います。 |
+| ポート [`0`](/web#let-the-runner-pick-the-port) の `url` | それぞれがアプリのコピーを個別に起動します。`next dev` のように、ディレクトリごとに 1 つのコピーしか実行しない開発サーバーでは、実行が失敗します。 |
+| [`reuseExisting: true`](/web#starting-your-app) 付きの `command` | 実行はセッションが起動したアプリを使います。セッションが閉じると、実行中であってもそのアプリは停止します。 |
+| `reuseExisting` なしで固定ポートの `command` | `APP_ALREADY_RUNNING` で失敗します。 |
+
+`CI` が設定されている場合、e2e は `reuseExisting` を無視し、実行は固定ポートの場合と同様に失敗します。
+失敗するような実行の前には、セッションを閉じてください。モバイルでは、どのセッションも使っていないデバイスで実行します。
+
+## 複数のエージェントを実行する
+
+サブエージェントを含む各エージェントは、それぞれ独自のブラウザまたはデバイスを持つ独自のセッションを開きます。
+デフォルトでは最大 4 つまでです。モバイルでは、各セッションにそれぞれ別のターゲットを割り当ててください。
+
+## シークレット
+
+`type_secret`、または `run_code` 内の `fill` は、シークレットをエージェントに見せずに入力します。
+スクリーンショットでマスクされるのはセキュアなフィールドだけなので、アプリがそれ以外の場所に表示したシークレットは
+スクリーンショットに写ります。
+
+<Warning>
+`start_recording` による動画はマスクされません。
+</Warning>
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="MCP サーバーのリファレンス" icon="book" href="/reference/mcp">
+    すべてのツール、フラグ、セッションのルール、エラーコード。
+  </Card>
+  <Card title="コーディングエージェント" icon="robot" href="/coding-agents">
+    スキル、テストの実行、失敗の読み方。
+  </Card>
+</CardGroup>

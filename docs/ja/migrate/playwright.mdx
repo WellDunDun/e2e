@@ -1,0 +1,395 @@
+---
+title: Playwright から
+description: Playwright と並行して e2e を実行し、テストを 1 ファイルずつ移行します。
+"og:image": "https://e2e.com/docs/images/og/migrate/playwright.png?v=e01f34cedb"
+"twitter:image": "https://e2e.com/docs/images/og/migrate/playwright.png?v=e01f34cedb"
+---
+
+import { SetupPrompt } from '../../snippets/setup-prompt-card.jsx';
+
+export const migrationPrompt = `Migrate this project's Playwright tests to e2e, one spec at a time. Docs: \`https://e2e.com/docs/migrate/playwright.md\`
+
+1. Read the migration guide above. It maps the Playwright config keys, APIs, and CLI flags that work in e2e, and lists what e2e doesn't have yet.
+2. If the project has no e2e config (\`e2e.config.ts\`, \`.mts\`, \`.js\`, or \`.mjs\`), run \`npx e2e init --yes\` (or the pnpm or bun equivalent). It writes a config and an example test, and installs nothing yet.
+3. Read the e2e skill (\`npx e2e guide\` prints it, \`npx e2e guide <topic>\` prints a topic) and follow it for every step below.
+4. If you ran init, ask me which model to use for agent steps: a ChatGPT, GitHub Copilot, OpenCode Console, or SuperGrok subscription, an API key, or a local model. Configure it with its provider package. If it needs a sign-in, give me the \`npx e2e login\` command and wait until I confirm.
+5. Port \`playwright.config.ts\` into the e2e config with the guide's config table. Keep \`@playwright/test\` installed and the two file patterns apart.
+6. Install dependencies.
+7. List the Playwright specs and ask me which one to move first. Suggest a flow whose steps change often, such as a wizard or a checkout.
+8. Check each Playwright API in that spec against "What e2e doesn't have yet". Use the "Use today" or "Use instead" entry, or leave that test in Playwright and tell me why. Then rewrite the spec as a \`.e2e.ts\` file under \`tests/\` (e2e runs \`tests/**/*.e2e.ts\` by default). Map each \`page\` call to \`screen\`, \`app\`, or \`browser\` with the guide. Where a Playwright query matched a fragment, add \`{ exact: false }\` or a RegExp.
+9. Keep navigation and the final assertions deterministic, with \`app.open()\` and locator assertions. Where a run of scripted interactions breaks often, propose an \`agent.act\` goal for it instead.
+10. Run the new file with \`npx e2e run <file>\` and fix it until it passes. Keep the Playwright spec until I confirm it can go.
+11. Summarize which tests moved, which stayed in Playwright, and why.`;
+
+
+e2e は 1 つのプロジェクトで Playwright と並行して実行できるので、その間にテストを 1 ファイルずつ
+移行できます。`@e2e-dev/web` は固定バージョンの `playwright-core` を同梱しているため、
+`@playwright/test` のバージョンはこれまでどおり自由に選べます。e2e はデフォルトで `e2e.config.ts` を読み込み、
+`tests/**/*.e2e.ts` を探すので、2 つのファイルパターンは分けておいてください。
+
+<SetupPrompt>
+
+<Prompt description={migrationPrompt} children={migrationPrompt} actions={["copy", "cursor"]} />
+
+</SetupPrompt>
+
+複数のセッションにまたがる移行では、[`migrate-to-e2e` スキル](/coding-agents#migrate-an-existing-suite) が移行済みのものを進捗ファイルに記録し、各テストを廃止するまで古いテストスイートを実行可能なまま保ちます。
+
+## 設定を移植する
+
+<Note>[クイックスタート](/quickstart) で e2e をインストールし、モデルを設定してください。</Note>
+
+`testDir`、`baseURL`、`use`、`webServer`、`projects` などの Playwright のキーを使うと、
+代わりに使うべき e2e のキーを示すメッセージとともに失敗します。
+[設定リファレンス](/reference/config) にすべてのキーが載っています。
+
+| Playwright | e2e |
+| --- | --- |
+| `use.baseURL`, `webServer` | ターゲットの `app: { url, command }`。[アプリの起動](/web#starting-your-app) を参照 |
+| `webServer.reuseExistingServer` | `app.command: { reuseExisting: true }`。CI では無視されます |
+| `projects` | `targets`。それぞれが 1 つのエンジンインスタンスです |
+| `testDir`, `testMatch`, `testIgnore` | `tests`。プロジェクトルートからの glob で、先頭の `!` で除外します |
+| `retries`, `workers`, `timeout` | 同じ名前で、[デフォルト値が異なります](#defaults-that-differ)。`workers` は整数です |
+| `expect.timeout`, `use.actionTimeout`, `globalTimeout` | `assertionTimeout`、`actionTimeout`、`maxDuration`。`maxDuration` の計測はアプリの起動ではなくテストの開始時点から始まります |
+| `maxFailures`, `use.headless: false` | CLI の `--max-failures <n>` と `--headed` |
+| `reporter`, `outputDir` | `reporters: ['list', 'junit', htmlReporter()]`。`htmlReporter` は `@e2e-dev/html-reporter` から読み込みます。`json` と `markdown` も使えます。`output` のデフォルトは `.e2e` です |
+| `use.viewport`, `locale`, `timezoneId`, `colorScheme`, `reducedMotion`, `userAgent`, `testIdAttribute` | `web({ ... })` の同じキー |
+| `use.browserName`, `httpCredentials`, `extraHTTPHeaders` | `web({ browser, basicAuth, headers })`。`basicAuth` と `headers` はアプリのオリジンにだけ適用され、[`credentialOrigins`](/reference/web#credentialorigins) で追加できます |
+| `chromium.connectOverCDP(url)` | `web({ connect: { cdpEndpoint: () => url } })`。chromium のみ |
+| `use.trace`, `use.video` | `trace`、`video`。設定、ターゲット、またはテストでモードを指定します。動画のサイズは `web({ screencast: { size } })` で設定します |
+| `use.permissions` | ターゲットの `app.permissions`。[ブラウザの権限の付与](/web#granting-browser-permissions) を参照 |
+| `setup` プロジェクトからの `use.storageState` | `session.save(name)` を使う `test.setup` と、テストの `{ session }`。[認証](/authentication) を参照 |
+| 固定値を持つ `use.storageState: { cookies }` | フィクスチャ内の `browser.setCookies(cookies)` |
+
+## スペックを 1 つ書き直す
+
+ウィザードやチェックアウトのように、ステップが頻繁に変わるフローから始めます。
+安定している Playwright のテストはそのままで構いません。
+
+```ts title="Playwright"
+import { test, expect } from '@playwright/test';
+
+test('checkout', async ({ page }) => {
+  await page.goto('/cart');
+  await page.getByRole('button', { name: 'Checkout' }).click();
+  await page.getByLabel('Card number').fill('4242424242424242');
+  await page.getByLabel('Expiry').fill('12/30');
+  await page.getByLabel('CVC').fill('123');
+  await page.getByRole('button', { name: 'Pay' }).click();
+  await expect(page.getByRole('heading')).toHaveText('Order confirmed');
+});
+```
+
+```ts title="e2e"
+import { test } from '@e2e-dev/web';
+import { expect } from 'e2e';
+
+test('checkout', async ({ app, agent, screen }) => {
+  await app.open('/cart');
+  await agent.act('pay with the test card 4242 4242 4242 4242, expiry 12/30, CVC 123');
+  await expect(screen.getByRole('heading')).toHaveText('Order confirmed');
+});
+```
+
+エージェントがチェックアウトのステップを実行し、フォームが変わっても適応します。
+`page.getBy*` の各行に対して `screen.getBy*` の行を書けば、テストを完全に決定論的なままにすることもできます。
+
+## 各 API を対応付ける
+
+どの行も現時点で動作します。ここにない API については、
+[e2e にまだないもの](#what-e2e-doesnt-have-yet) を確認してください。`browser` の呼び出しは
+ブラウザでのみ実行されるため、それを使うテストは `requires: ['browser']` を宣言し、
+ほかのターゲットではスキップされます。
+
+<AccordionGroup>
+<Accordion title="ロケーター">
+
+| Playwright | e2e |
+| --- | --- |
+| `page.getByRole`, `getByLabel`, `getByText`, `getByTestId`, `getByPlaceholder` | `screen` の同じメソッド。文字列は [テキスト全体](#what-differs-on-purpose) に一致します |
+| `getByAltText(alt)` | `getByRole('image', alt)` |
+| `filter({ hasText, hasNotText, has, hasNot })`, `first()`, `last()`, `nth(i)`, `count()`, `or()`, `all()` | 同じ |
+| `page.locator(selector)`, `page.frameLocator(selector)` | `browser` の同じメソッド。CSS、`xpath=`、`>>` のチェーンが使えます |
+| `page.click(selector)`, `page.fill(selector, value)`, `page.waitForSelector(selector)` | `browser.locator(selector).tap()`、`.fill(value)`、`.waitFor()` |
+
+</Accordion>
+<Accordion title="アクション">
+
+| Playwright | e2e |
+| --- | --- |
+| `click()`, `dblclick()` | `tap()`、`doubleTap()`。`click()` と `dblclick()` はエイリアスです |
+| `click({ button: 'right' })`, `click({ delay })` | `secondaryTap()`、`longPress({ duration })` |
+| `click({ position })`, `click({ modifiers })` | `tap({ position })`、`tap({ modifiers })` |
+| `fill()`, `pressSequentially()`, `clear()`, `focus()`, `hover()`, `check()`, `uncheck()`, `dragTo()`, `setInputFiles(path)`, `selectOption({ label })` or `{ value }` | 同じ。ただし `force`、`trial`、`position` はありません |
+| `press(key)` | 1 文字または [名前付きキー](/reference/engine#keys) については同じ。キーコードには `focus()` の後に `browser.keyboard.press` を使います |
+| `innerText()`, `allInnerTexts()`, `scrollIntoViewIfNeeded()` | `textContent()`、`allTextContents()`、`scrollIntoView()` |
+| `textContent()`, `allTextContents()`, `inputValue()`, `getAttribute()`, `boundingBox()`, `isVisible()`, `isHidden()`, `isEnabled()`, `isDisabled()`, `isChecked()`, `waitFor({ state })` | 同じ |
+| `page.keyboard.press`, `type`, `down`, `up`; `page.mouse.move`, `wheel`, `down`, `up` | `browser.keyboard` と `browser.mouse` の同じメソッド |
+| `page.mouse.click(x, y)`, `page.mouse.dblclick(x, y)`, `page.dragAndDrop(source, target)` | `screen.tapAt({ x, y })`、`screen.doubleTapAt({ x, y })`、`source.dragTo(target)` |
+
+</Accordion>
+<Accordion title="アサーション">
+
+| Playwright | e2e |
+| --- | --- |
+| `toBeVisible()`, `toBeHidden()`, `toBeEnabled()`, `toBeDisabled()`, `toBeChecked()`, `toBeFocused()`, `toBeAttached()`, `toHaveText()`, `toContainText()`, `toHaveValue()`, `toHaveAttribute()`, `toHaveCount()`, `toHaveAccessibleName()`, `toHaveRole()` | 同じ。`{ visible }`、`{ enabled }`、`{ checked }`、`{ attached }`、`{ ignoreCase }` も使えます |
+| `toHaveId(id)`, `toContainClass(name)` | `toHaveAttribute('id', id)`、`toHaveAttribute('class', RegExp)` |
+| `expect(page).toHaveURL()`, `toHaveTitle()` | `expect(browser).toHaveURL()`、`toHaveTitle()` |
+| `expect(page).toHaveScreenshot()`, `expect(locator).toHaveScreenshot()` | `expect(screen).toHaveScreenshot()` とロケーター形式。[ビジュアル比較](/visual-testing) を参照 |
+| `toBe()`、`toEqual()`、`toMatchObject()`、`toContain()`、`toHaveLength()`、`toHaveProperty()`、`toMatch()`、真偽値と数値のマッチャーを使う `expect(value)` | 同じ。[値のマッチャー](/reference/expect#value-matchers) を参照 |
+| `expect.any()`, `anything()`, `objectContaining()`, `arrayContaining()`, `stringMatching()`, `stringContaining()`, `expect.poll()`, `expect.soft()` | 同じ。`poll` は `interval` を 1 つだけ受け取ります |
+
+</Accordion>
+<Accordion title="ナビゲーションとアプリ">
+
+| Playwright | e2e |
+| --- | --- |
+| `page.goto(path)` | `app.open(path)`。オプションを使うには `browser.goto(url, { waitUntil, timeout })` |
+| `page.goBack()`, `goForward()`, `reload()`, `url()`, `title()`, `setViewportSize()` | `browser.back()`、`forward()`、`reload()`、`url()`、`title()`、`setViewport()` |
+| `page.waitForURL(url)` | `RegExp` または完全一致の URL を渡す `browser.waitForURL(url)`。glob は使えません |
+| `page.screenshot()` | `app.screenshot(label)`。ビューポートを撮影し、レポートに添付します |
+| テストごとに新しい `context` | 試行ごとに同じく新しくなります。`app.restart()` で作り直し、`app.clearState()` はストレージも消去します |
+
+</Accordion>
+<Accordion title="ネットワークとブラウザ">
+
+| Playwright | e2e |
+| --- | --- |
+| `page.route(pattern, handler)`, `unroute()`, `unrouteAll()` | `browser` の同じメソッド。パターンは `RegExp` か、完全な URL に対する glob です |
+| `route.fulfill()`, `continue()`, `fallback()`, `abort()`, `fetch()` | 同じ。それぞれのオプションは [`route`](/reference/web#route) を参照 |
+| `page.waitForResponse(pattern)` | `browser.waitForResponse(pattern)`。`'/api/orders'` ではなく `'**/api/orders'` と書きます |
+| `page.on('dialog')`, `page.waitForEvent('download')` | `browser.onDialog('accept')` またはハンドラー。`browser.waitForDownload(() => trigger)` |
+| `page.waitForEvent('popup')` | `browser.waitForPopup(() => trigger)`。新しいタブがアクティブになります。[タブ](/reference/web#tabs) を参照 |
+| `context.pages()`, `context.newPage()`, `page.bringToFront()` | `browser.tabs()`、`browser.newTab()`、`tab.activate()`。`context.on('page')` イベントはありません |
+| `page.evaluate(fn, arg)` | `browser.evaluate(fn, arg)`。入出力は JSON です |
+| `page.addInitScript()`, `page.emulateMedia({ colorScheme, reducedMotion })` | `browser.addInitScript()` または `web({ initScripts })`。`browser.emulateMedia()` |
+| `context.addCookies()`, `cookies()`, `clearCookies()` | `browser.setCookies()`、`browser.cookies()`、`browser.clearCookies()` |
+
+</Accordion>
+<Accordion title="テストの構造">
+
+| Playwright | e2e |
+| --- | --- |
+| `import { test, expect } from '@playwright/test'` | `import { test } from '@e2e-dev/web'` と `import { expect } from 'e2e'` |
+| テスト内の `{ page }` | `{ screen, app, browser }` |
+| `test()`, `test.describe()`, `test.only`, `test.fail()`, `test.skip(title, fn)`, `test.skip(condition, reason)` | 同じ。条件付きの `skip` はテスト本体または `beforeEach` の中で使えます |
+| `beforeEach`, `afterEach`, `beforeAll`, `afterAll` | 同じ。ただしタイトルは付けません。`beforeAll` と `afterAll` が受け取れるのは `platform` フィクスチャだけです |
+| `test.describe.skip`, `test.describe.serial`, `describe.configure({ mode: 'serial', retries, timeout })` | `test.describe(title, { skip, serial, retries, timeout }, fn)` |
+| `{ tag: '@smoke' }` | テストまたはグループの `{ tags: ['smoke'] }` |
+| `test.extend({ fixture })` | 同じ形です。ほかのフィクスチャを必要とするフィクスチャは、チェーンした `extend` に置きます |
+
+</Accordion>
+<Accordion title="CLI">
+
+| Playwright | e2e |
+| --- | --- |
+| `npx playwright test tests/login.spec.ts:12` | `npx e2e run tests/login.e2e.ts:12`。ディレクトリ、名前のみ、glob でも選択できます |
+| `--project web`, `--list` | `--target web`、`npx e2e list` |
+| `--grep`, `--grep-invert`, `--headed`, `--retries`, `--workers`, `--config`, `--output`, `--reporter`, `--trace`, `--shard`, `--repeat-each`, `--max-failures`, `--last-failed`, `--pass-with-no-tests`, `-u` | 同じ。短縮形のフラグは `-u` のみです |
+| `npx playwright install` | `npx @e2e-dev/web install`。実行時にも不足しているブラウザをインストールします |
+
+</Accordion>
+</AccordionGroup>
+
+## ページオブジェクトを移植する
+
+ページオブジェクトは、クエリとアクションのために `screen` を、キーボード、マウス、
+CSS セレクター、`evaluate` のために `browser` を受け取ります。フィクスチャとして渡します。
+
+```ts title="tests/page-models/account-page.ts"
+import type { Locator, Screen } from 'e2e';
+import type { Browser } from '@e2e-dev/web';
+
+export class AccountPage {
+  readonly accountName: Locator;
+
+  constructor(
+    readonly screen: Screen,
+    readonly browser: Browser,
+  ) {
+    this.accountName = screen.getByTestId('account-name');
+  }
+
+  async filterByNote(note: string) {
+    await this.screen.getByRole('button', 'Filter').click();
+    await this.screen.getByRole('button', 'Note').click();
+    await this.browser.keyboard.type(note);
+  }
+}
+```
+
+```ts title="tests/fixtures.ts"
+import { test as base } from '@e2e-dev/web';
+import { AccountPage } from './page-models/account-page.ts';
+
+export const test = base.extend<{ accountPage: AccountPage }>({
+  accountPage: async ({ screen, browser }, use) => {
+    await use(new AccountPage(screen, browser));
+  },
+});
+```
+
+`browser` を読み取るフィクスチャを使うと、その `test` のすべてのテストが Web 専用になります。
+[ポータブルに保つ](/page-object-model#keep-it-portable) を参照してください。フックから `newPage()` と
+`page.close()` を削除してください。すべての試行は新しいコンテキストで始まります。
+
+## e2e にまだないもの
+
+「予定あり」はロードマップに載っているものです。「未定」は時期が決まっていないものです。「予定なし」は
+意図的に含めていないものです。回避策を使うか、テストを Playwright に残してください。
+
+### 予定あり
+
+<AccordionGroup>
+<Accordion title="ロケーターとアクション">
+
+| Playwright | 現時点での回避策 |
+| --- | --- |
+| `locator.locator(selector)`, `locator.and()`, `filter({ visible })` | `'.card >> .close'` のような 1 つの `browser.locator` セレクター、またはスコープ内での `screen` のクエリ |
+| `locator.evaluate()`, `expect(locator).toHaveClass()`, `toHaveCSS()`, `dispatchEvent()` | `browser.evaluate(fn, selector)`。`expect(browser).toHaveClass(locator, cls)` |
+| `setInputFiles({ buffer })`, `selectOption([...])`, `click({ clickCount })`, `hover({ position })` | 一時ファイルのパス。複数選択には `browser.evaluate`。`boundingBox()` と組み合わせた `browser.mouse` |
+
+</Accordion>
+<Accordion title="アサーション">
+
+| Playwright | 現時点での回避策 |
+| --- | --- |
+| `expect(fn).toPass()`, `expect.poll(fn, { intervals })` | `expect.poll(async () => { ...; return true }).toBe(true)` |
+| `toBeEmpty()`, `toBeEditable()`, `toBeInViewport()` | フォームコントロールには `toHaveValue('')`、ほかの要素には `toHaveText('')`。`toBeEnabled()` と `.not.toHaveAttribute('readonly')`。`boundingBox()` に対する `expect.poll` |
+| `locator.screenshot()`, `{ fullPage, clip }`, `snapshotPathTemplate`, `ignoreSnapshots` | `toHaveScreenshot` でビューポートまたは 1 つのロケーターを撮影。ビジュアルテストをスキップするにはタグと `--exclude-tag` |
+| `expect(locator, 'message')`, `expect.configure()` | メッセージは削除します。失敗時にはロケーターとマッチャーが表示されます。呼び出しごとに `{ timeout }` を指定します |
+| `@axe-core/playwright` | `browser.addInitScript({ path: 'node_modules/axe-core/axe.min.js' })` で axe-core を読み込み、`browser.evaluate` の中で `axe.run()` を呼び出します |
+| `.resolves`, `.rejects`, `toThrow()`, `toStrictEqual()`, `toContainEqual()`, `toBeInstanceOf()`, `expect.closeTo()` | 先に `await` するか、エラーを catch してアサーションします。`toEqual`。深い等価性で比較する `toContain`。`toBeCloseTo` |
+| 最初の読み取りで成功する `.not` のロケーターマッチャー | 条件が 1 秒間成り立った後に成功します。肯定形の逆のマッチャーは最初の読み取りで成功します: `toBeHidden()`、`toBeDisabled()`、`toBeChecked({ checked: false })` |
+| `expect.extend()` | `expect` を呼び出す async のヘルパー |
+
+</Accordion>
+<Accordion title="ナビゲーション、ネットワーク、ブラウザ">
+
+| Playwright | 現時点での回避策 |
+| --- | --- |
+| `devices['iPhone 15']`, `isMobile`, `hasTouch`, `deviceScaleFactor` | `web({ viewport, userAgent })`。実際のタッチ操作にはモバイルターゲット |
+| `waitForURL(glob)`, `waitForFunction()` | `RegExp`。`browser.evaluate` に対する `expect.poll` |
+| `waitForResponse(predicate)`, `waitForRequest()`, `page.on('request')`, `response.ok()` | `browser.waitForResponse(pattern)` の後、テスト内でレスポンスを確認します。`ok()` の代わりに `status` を使います。リクエストには、`route.request` を記録してから `route.fallback()` を呼び出す `browser.route` ハンドラーを使います |
+| `route.fulfill({ response })`, `route.abort(code)`, `route.fetch(options)`, `request.postDataJSON()` | `route.fetch()` から得た `status`、`headers`、`body`。`JSON.parse(route.request.postData)` |
+| `page.addLocatorHandler()` | `beforeEach` でオーバーレイを閉じるか、`browser.setCookies` で同意用の Cookie を設定します |
+| `page.on('console')`, `page.on('pageerror')`, `page.clock` | `window` の配列に記録する、または `Date` をスタブする `browser.addInitScript` |
+| `context.setOffline()`, `setGeolocation()`, `grantPermissions()` | すべてのリクエストを中断するルート。`browser.addInitScript` のスタブ。ターゲットの `app.permissions` |
+| `ignoreHTTPSErrors`, `proxy`, `channel`, `launchOptions` | アプリを `http` で配信します。ブラウザを自分で起動し、`web({ connect })` で接続します |
+| `request` フィクスチャ, `page.request`, `expect(response).toBeOK()` | `app.baseUrl` を使った Node の `fetch`。[API](/api-testing) を参照。`expect(response.status).toBe(200)` |
+
+</Accordion>
+<Accordion title="テストの構造、レポート、CLI">
+
+| Playwright | 現時点での回避策 |
+| --- | --- |
+| `test.step()`, `testInfo.attach()` | 各呼び出しはすでにレポート内の名前付きステップです。`app.screenshot(label)` でスクリーンショットを添付します |
+| `test.info()`, フックとフィクスチャ内の `testInfo`, `annotations` | 独自のフィクスチャまたはモジュールの状態。タイトルまたはタグに含めた issue ID |
+| `fullyParallel`, `describe.configure({ mode: 'parallel' })` | ファイルを分割します。ファイルは並列に、ファイル内のテストは順番に実行されます |
+| オンデマンド、ワーカースコープ、`{ auto: true }` のフィクスチャ。`mergeTests()` | フィクスチャの組み合わせごとに 1 つの `test`。ファイル単位のセットアップには `beforeAll` |
+| `globalSetup`, `globalTeardown`, `webServer` の配列 | 実行を囲むスクリプト、またはすべてのプロセスを起動する 1 つの `app.command` |
+| `projects[].testMatch`, `testDir`, `testIgnore`, `grep` | テストの `platforms` またはタグ、あるいはターゲットごとに 1 回の実行 |
+| `--ui`, `npx playwright show-report`, `--reporter html` | `--watch --headed`。`htmlReporter()` が書き出す `.e2e/report.html` を開きます |
+| `test.setTimeout()`, `test.slow()`, `test.fixme()`, `test.describe.only()`, describe に対する `test.fail()` | テストまたはグループの `{ timeout }` または `{ skip: 'reason' }`。`test.only` と `test.fail()` は各テストに付けます |
+| `failOnFlakyTests`, `use.navigationTimeout`, `--timeout`, `--quiet` | `report.json` の `run.summary.flaky`。`browser.goto(url, { timeout })`。設定の `timeout` |
+| `blob` レポーターと `merge-reports` | シャードごとに 1 つのレポート |
+| Playwright の Docker イメージ | `@e2e-dev/web` が固定している `playwright-core` のバージョンのイメージ、または `npx @e2e-dev/web install chromium --with-deps` |
+| ファイルまたは describe 内の `test.use({ ... })` | グループのランナーオプション、ターゲットのエンジンオプション、実行時の `browser.setViewport` |
+| `projects[].dependencies`, `teardown` | サインイン用のトップレベルの `test.setup`。実行を囲むスクリプト |
+| `page.pause()` | `--step --headed` でキー入力まで各ステップを停止します |
+| `line`、`dot`、`github` レポーター | `list`。`github()` はプルリクエストにコメントを投稿します |
+
+</Accordion>
+</AccordionGroup>
+
+### 未定
+
+| Playwright | 現時点での回避策 |
+| --- | --- |
+| `projects[].retries`, `projects[].timeout` | グループのオプション |
+| `--debug`, VS Code 拡張機能 | `--step --headed` でキー入力まで各ステップを停止します。`screen.debug()` はツリーを出力します |
+| オプションフィクスチャ、`extend` での `page` や `context` の上書き | フィクスチャ内の `process.env`。独自の名前を付けた新しいフィクスチャ |
+| `const response = await page.goto()` | ナビゲーションの前に `browser.waitForResponse` を開始します |
+| Playwright の `Reporter` クラス、サードパーティのレポーター | `onEvent` と `onRunFinished` を持つ [カスタムレポーター](/reference/reporters#custom-reporters)。ダッシュボード向けには `junit.xml` |
+| 2 人目のユーザー用の `browser.newContext()` | 2 人目のユーザーは `fetch` で API を通じて操作します |
+| `page.exposeFunction()`, `addStyleTag()`, `innerHTML()`, `page.viewportSize()` | `browser.evaluate` |
+| `routeFromHAR()`, `routeWebSocket()`, `page.setExtraHTTPHeaders()` | エンドポイントまたはヘッダーごとの `browser.route`。`WebSocket` をスタブする `browser.addInitScript` |
+| `emulateMedia({ media, forcedColors, contrast })` | - |
+| `npx playwright show-trace`, `trace.zip`, `context.tracing` | `.e2e/results/` 内のテストのディレクトリにある `trace.md`。トレースは Markdown のページで、zip もビューアーもありません |
+
+### 予定なし
+
+| Playwright | 代わりに使うもの |
+| --- | --- |
+| 値による `selectOption('pro')` | `selectOption({ value: 'pro' })`。文字列だけを渡すとラベルにのみ一致します |
+| `use.storageState: 'file.json'`, `context.storageState({ path })` | `test.setup` と `{ session }`。[セッションは 1 回の実行の間だけ有効](#what-differs-on-purpose) なので、ファイルはありません |
+| `page.waitForTimeout(ms)`, `page.waitForNavigation()` | 待ちたい状態に対するロケーターのアサーション。`browser.waitForURL(url)` |
+| ルートの glob 内のリテラルとしての `?` と `{a,b}` | `RegExp`。glob では `?` はワイルドカードで、`{a,b}` はリテラルです |
+| `--only-changed` | `filters` に [テストフィルター](/filters) を設定した `--changed-since <ref>` |
+| `page.$()`, `$eval()`, `elementHandle()`, JSON 以外の `evaluate` の値, `locator.page()` | ロケーターと、入出力が JSON の `browser.evaluate`。こちらはレポートに記録され、シークレットが秘匿化されます。ページオブジェクトには `browser` を渡します |
+| ハンドラーなしで黙って閉じられるダイアログ | `browser.onDialog('dismiss')`。処理されないダイアログは次のステップを失敗させます |
+| `page.goto('data:...')`, `'file://...'` | アプリの URL に対する `route.fulfill({ body, contentType: 'text/html' })`。開けるのは `http` と `https` だけです |
+| `getByRole(role, { includeHidden })` | `browser.locator('role=button[include-hidden=true]')`。ロールのクエリはアクセシビリティツリーに従います |
+| タグに対する `--grep @smoke`、正規表現の位置引数、`file:line:column` | `--tag smoke`。glob または名前のみ。`file:line` |
+| `getByTitle()` | `browser.locator('[title="Close"]')`。title は DOM の属性なので、`screen` のクエリはありません |
+| `page.waitForLoadState()` | 次のページに表示される内容に対するアサーション。ナビゲーションは `load` を待ち、各アクションとアサーションは対象のノードを待ちます |
+| `npx playwright codegen`, Inspector | [`npx e2e mcp`](/mcp-server) を使うと、コーディングエージェントがテストを書きながらアプリを操作できます。`screen.debug()` はツリーを出力します |
+| `{ force: true }`, `{ trial: true }` | `tap({ position })` は操作可能性のチェックをスキップします。試行には `toBeVisible()` と `toBeEnabled()` |
+| `ariaSnapshot()`, `toMatchAriaSnapshot()`, `toMatchSnapshot()` | `expect(await screen.tree()).toContain(...)`。フィクスチャファイルと `toEqual` |
+| `keyboard.insertText()`, `<label>` に対する `inputValue()` | `fill()`。`getByLabel` で特定したコントロールそのもの |
+| `use.connectOptions`, トレースモードの `retain-on-first-failure` と `retain-on-failure-and-retries` | CDP 経由の `web({ connect })`（chromium のみ）。`retain-on-failure` |
+
+## 意図的に異なる点
+
+- 文字列はテキスト全体に、大文字と小文字を区別して一致します。Playwright の `getByRole`
+  の name、`getByLabel`、`getByPlaceholder`、`getByText` は、大文字と小文字を区別しない
+  部分文字列に一致します。一部分に一致させるには `{ exact: false }` または `RegExp` を渡します。
+  [クエリ](/reference/screen#queries) を参照してください。
+
+  ```ts
+  // <button>Save changes</button>, <label>Email address <input></label>
+  screen.getByRole('button', 'Save');                  // no match
+  screen.getByRole('button', { name: 'Save', exact: false });    // matches
+  screen.getByRole('button', 'save changes');          // no match, case differs
+  screen.getByLabel('Email');                                    // no match
+  ```
+- テキストの読み取りはレンダリングされたテキストを返します。`textContent()`、`toHaveText`、
+  `toContainText` は `innerText` が返す内容を読むため、非表示のテキストは除外され、
+  `text-transform` が適用されます。[ロケーターの読み取り](/reference/screen#locator-reads) を参照してください。
+- `toHaveRole` は `getByRole` の語彙を受け取るため、`paragraph`、`generic`、
+  およびそこに含まれないほかのロールは型エラーになり、`img` は `image` として読まれます。
+  比較するのはツリーが読み取るロールで、`contenteditable` のエディターは `textbox` になります。
+- ロケーターは厳密です。複数の要素に一致した状態でのアクション、読み取り、肯定形のマッチャーは
+  `LOCATOR_AMBIGUOUS` になります。Playwright の `page.click(selector)` と
+  `isVisible()` は最初の要素を使います。`filter` または `first()` で絞り込んでください。
+- `.not.toBeChecked()` はボタンや見出しに対しても成功します。コントロールはロールで
+  クエリしてください。そうすれば、コントロールの種類が変わったときにアサーションが失敗します。
+- セッションは 1 回の実行の間だけ有効です。`test.setup` は状態を名前付きで保存し、
+  `{ session }` がそれを復元します。ファイルは暗号化され、クリーンアップ時に削除されるため、
+  再利用できる `.auth/user.json` はありません。
+- テストは生の `Page` を受け取りません。そこで行われる操作は記録も、シークレットの秘匿化も、
+  マスキングもされないためです。`surfaceOf(engine)` は
+  [カスタムエグゼキューター](/executors#driving-the-page-yourself) 用で、テストコード用ではありません。
+
+## 異なるデフォルト値
+
+| 設定 | Playwright | e2e |
+| --- | --- | --- |
+| テストのタイムアウト | 30 秒 | 120 秒、`timeout` |
+| アクションのタイムアウト | なし | 30 秒、`actionTimeout` |
+| expect のタイムアウト | 5 秒 | 5 秒、`assertionTimeout` |
+| ナビゲーションのタイムアウト | なし | 120 秒、テストの時間枠 |
+| リトライ | 0 | CI では 1、ローカルでは 0 |
+| ワーカー | CPU コア数の半分 | CI では 1、ローカルでは CPU コア数の半分 |
+| トレース | `off`（生成される設定では `on-first-retry`） | `retain-on-failure` |
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="コアコンセプト" icon="pen-to-square" href="/core-concepts">
+    スクリプト化したセレクターの代わりに、ゴール、アサーション、ロケーターを使います。
+  </Card>
+  <Card title="Web エンジンリファレンス" icon="masks-theater" href="/reference/web">
+    すべてのオプションと、すべての `browser` メソッド。
+  </Card>
+</CardGroup>

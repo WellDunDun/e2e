@@ -1,0 +1,287 @@
+---
+title: コーディングエージェント
+description: コーディングエージェントに、スキル、ライブのアプリセッション、そしてテストの作成とデバッグに使えるレポートを与えます。
+"og:image": "https://e2e.com/docs/images/og/coding-agents.png?v=c6990935d7"
+"twitter:image": "https://e2e.com/docs/images/og/coding-agents.png?v=c6990935d7"
+---
+
+Claude Code、Codex、Cursor などのコーディングエージェントは、e2e のテストを作成、実行、
+デバッグできます。エージェントはスキルから e2e を学び、`e2e mcp` サーバーを通じてアプリを使い、
+失敗したテストのトレースページを読みます。
+
+## スキルをインストールする
+
+<CodeGroup>
+```bash npm
+npx e2e init
+```
+
+```bash pnpm
+pnpm dlx e2e init
+```
+
+```bash bun
+bunx e2e init
+```
+</CodeGroup>
+
+| パス | 使用するもの |
+| --- | --- |
+| `.agents/skills/e2e/` | `.agents/skills` を読むエージェント |
+| `.claude/skills/e2e/` | Claude Code。両方がインストールされている場合は `.agents/skills/e2e/` へのシンボリックリンクです。 |
+
+コピーには `SKILL.md` とトピック別のリファレンスが含まれます。
+[`e2e upgrade`](/reference/cli#e2e-upgrade) は、パッケージマネージャーでアップグレードした後も
+含めて、これを更新します。`init` を使わない場合は、`npx skills add e2e-inc/e2e` で
+スキルをインストールでき、`npx e2e guide [topic]` でインストール済みのパッケージから
+スキルを表示できます。下記のプラグインは、3 つの e2e スキルすべてをすべてのプロジェクト向けに
+インストールします。
+
+`init` はプロジェクトの指示ファイルを変更しません。参照先を示す必要があるエージェントには、
+次の行を追加してください。
+
+```md title="AGENTS.md"
+End-to-end tests use e2e; read .agents/skills/e2e/SKILL.md before writing or running one.
+```
+
+パッケージには、オフラインで読めるようにこのドキュメントも `.mdx` ページとして同梱されています。
+単一パッケージのプロジェクトでは `node_modules/e2e/docs` にあります。`/reference/cli` のような
+リンクは `docs/reference/cli.mdx` に対応します。
+
+<Accordion title="Claude Code、Codex、Cursor のプラグインをインストールする">
+
+e2e のリポジトリは、Claude Code と Codex、そして Claude Code のファイルを読む Grok Build 向けの
+プラグインマーケットプレイスです。Cursor はローカルのプラグインフォルダーからプラグインを
+読み込みます。
+
+<CodeGroup>
+```bash Claude
+claude plugin marketplace add e2e-inc/e2e
+claude plugin install e2e@e2e
+```
+
+```bash Codex
+codex plugin marketplace add e2e-inc/e2e
+codex plugin add e2e@e2e
+```
+
+```bash Cursor
+repo=$(mktemp -d)
+git clone --depth 1 https://github.com/e2e-inc/e2e "$repo"
+mkdir -p ~/.cursor/plugins/local
+rm -rf ~/.cursor/plugins/local/e2e
+cp -R "$repo/plugins/e2e" ~/.cursor/plugins/local/
+```
+</CodeGroup>
+
+新しいセッションを開始してください。Cursor では **Developer: Reload Window** を実行します。
+Cursor の Teams と Enterprise では、ローカルプラグインに管理者設定 **Allow Local
+Plugin Imports** が必要です。または、管理者が `e2e-inc/e2e` をチームのマーケットプレイスとして
+インポートします。プラグインは `e2e`、`create-verification-skill`、`migrate-to-e2e` の
+スキルと [MCP サーバー](/mcp-server) を追加しますが、npm パッケージは追加しません。
+他の 2 つのスキルは、プラグイン名の下で呼び出します。Claude Code では `/e2e:<skill>`、
+Codex では `$e2e:<skill>`、Cursor では `/<skill>` です。
+
+プラグインのバージョンは e2e のリリースに追随します。更新するには、次のコマンドを実行して
+新しいセッションを開始してください。Cursor では、上記のコマンドをもう一度実行します。
+
+<CodeGroup>
+```bash Claude
+claude plugin marketplace update e2e
+claude plugin update e2e@e2e
+```
+
+```bash Codex
+codex plugin marketplace upgrade e2e
+```
+</CodeGroup>
+
+</Accordion>
+
+<Accordion title="OpenClaw または Hermes Agent にインストールする">
+
+3 つのスキルは [ClawHub](https://clawhub.ai/) で `@e2e` の下に公開されています。
+Hermes Agent はリポジトリを tap として読み込みます。
+
+<CodeGroup>
+```bash OpenClaw
+openclaw skills install @e2e/e2e
+openclaw skills install @e2e/create-verification-skill
+openclaw skills install @e2e/migrate-to-e2e
+```
+
+```bash Hermes
+hermes skills tap add e2e-inc/e2e
+hermes skills install e2e-inc/e2e/e2e
+```
+</CodeGroup>
+
+</Accordion>
+
+## エージェントにアプリを使わせる
+
+`e2e mcp` は、エージェントにアプリのライブセッションを提供します。エージェントはロケーターを
+書く前に画面に対して確認し、自分が行った UI の変更も確認します。`init` がサーバーを登録します。
+セットアップとプロンプトについては [MCP サーバー](/mcp-server) を参照してください。
+
+## エージェントがテストを書いて実行する方法
+
+スキルは、エージェントに最初に設定と既存のテストを読むよう指示します。`e2e mcp` を使うと、
+エージェントはセッションの中でフローをたどり、各ステップを実行しながら書いていきます。
+既知のフィールドと正確な値には、1 つのノードに一致したロケーターから `screen` の呼び出しを
+使います。
+
+```ts title="tests/checkout.e2e.ts"
+import { test, expect, credentials } from 'e2e';
+
+test('a signed-in user reaches checkout', async ({ screen, app, agent }) => {
+  const user = credentials.user('customer');
+  await app.open('/login');
+  await screen.getByLabel('Email').fill(user.username);
+  await screen.getByLabel('Password').fill(user.password);
+  await screen.getByRole('button', 'Sign in').click();
+  await expect(screen.getByRole('heading', 'Welcome back')).toBeVisible();
+
+  await agent.act('Add the cheapest item on the page to the cart');
+  await expect(screen.getByRole('status', 'Cart')).toHaveText('1 item');
+  await agent.act('Open the cart');
+  await expect(screen.getByRole('heading', 'Your cart')).toBeVisible();
+});
+```
+
+- **[アトミックなゴール](/core-concepts#goals) ごとに `agent.act` を 1 つ、その後に
+  `expect`。** エージェントが間違ったことをすると `expect` が失敗します。ロケーターの
+  マッチャー、または別の [検証チェック](/cache#when-a-recording-is-written) があると、
+  キャッシュがそのステップをリプレイできるようにもなります。
+- **スリープは使いません。** ロケーターはポーリングし、アクションはターゲットを待ち、
+  `expect` はタイムアウトまでリトライします。
+- **シークレットは `credentials.user(name)` を通じて扱います。** 設定で宣言してください。
+  テストに直接書いてはいけません。
+
+反復作業中、エージェントは作業中のテストだけを、その `test(` が始まる行番号で指定して実行します。
+`--action-timeout 5000` を指定すると、間違ったロケーターは 30 秒ではなく 5 秒で失敗します。
+
+<CodeGroup>
+```bash npm
+npx e2e run tests/checkout.e2e.ts:3 --action-timeout 5000
+```
+
+```bash pnpm
+pnpm exec e2e run tests/checkout.e2e.ts:3 --action-timeout 5000
+```
+
+```bash bun
+bunx e2e run tests/checkout.e2e.ts:3 --action-timeout 5000
+```
+</CodeGroup>
+
+エージェントは、再度実行する前に CLI、設定、収集のエラーを修正します。
+キャッシュの記録は編集しません。
+
+エージェントはリプレイキャッシュを有効のままにするため、確認が成功したゴールはモデルを
+呼び出さずにリプレイされます。リトライはすべてのゴールをライブで実行するため、リトライは
+無効にします。テストが成功したら、エージェントは `--action-timeout` を外し、`--no-cache` を
+付けて一度実行し、ライブのエージェントがすべてのゴールに到達することを確認します。
+[修正中にテストを再実行する](/cache#rerun-a-test-while-you-fix-it) を参照してください。
+
+## エージェントが失敗を読み解く方法
+
+デフォルト（[`trace`](/reference/config#trace)）では、実行は失敗、タイムアウト、中断、
+または不安定（flaky）になった各テストについて、`.e2e/results/` 以下のそのテストの
+ディレクトリにトレースページを書き出します。`.e2e` はデフォルトの `output` です。
+ターミナルは、失敗した各テストの下に `❯ trace .e2e/results/<test>/trace.md` として
+そのページを示します。
+
+エージェントは `.e2e/report.json` ではなくそのページを読みます。`.e2e/report.json` は
+同じ事実を [スクリプト](/debugging) 向けに保持しています。ページには、失敗した行と、
+各ステップが何をしたかが含まれます。アクションが操作したノード、アサーションが読み取った値、
+キャッシュの判断、コンソールエラー、失敗したリクエストです。エージェントの最後のいくつかの
+ターンと、失敗時の画面も含まれます。
+
+エージェントはその証拠からテストを修正します。失敗した行だけでなく、証拠がカバーする
+すべての行を修正します。テストは最初に失敗したステップで止まるため、エージェントは次の実行の
+前に、その後の行も確認します。
+
+ページに表示されていない画面を見るには、エージェントは Web ならその URL のように最短の方法で
+MCP セッションの中でその画面を開きます。フローを最初からたどり直すことはしません。
+
+モデル呼び出しの詳細については、エージェントは `--ai-trace` を追加し、
+[unbox-ai](/debugging#agent-steps) でトレースを読みます。`--no-cache` と組み合わせると、
+フロー内のすべてのモデル呼び出しを取得できます。生のトレースをエージェントのコンテキストで
+開かないでください。プロンプトが繰り返されており、数メガバイトになることがあります。
+
+## アプリ用の検証スキルを生成する
+
+e2e スキルが教えるのはランナーであり、あなたのアプリではありません。
+`create-verification-skill` スキルは、アプリについて教えるプロジェクトローカルの
+`.agents/skills/verify-<app>/` スキルを書き、引き渡す前に一度テストします。
+
+<CodeGroup>
+```bash npm
+npx skills add e2e-inc/e2e --skill create-verification-skill
+```
+
+```bash pnpm
+pnpm dlx skills add e2e-inc/e2e --skill create-verification-skill
+```
+
+```bash bun
+bunx skills add e2e-inc/e2e --skill create-verification-skill
+```
+</CodeGroup>
+
+その後、エージェントに `/create-verification-skill` を依頼してください。
+
+<Accordion title="生成されたスキルの内容">
+- 設定から取得した起動コマンドと doctor コマンド。
+- アプリを操作する 2 つの方法: ライブの `e2e mcp` セッションとテスト。
+- 証明として残す証拠。
+- 機能ごとに 1 つの `e2e explore` チャーターを持つ機能マップ。これにより、
+  [バグバッシュ](/bug-bash) をマップから展開できます。
+
+生成されたスキルは、あなたのアプリについて正しいことだけを記述し、それ以外は e2e スキルに
+リンクします。これは poteto の pstack にある
+[create-verification-skill](https://github.com/cursor/plugins/tree/main/pstack/skills/create-verification-skill)
+をもとにしており、手作りのハーネスの代わりに e2e を使っています。
+</Accordion>
+
+## 既存のスイートを移行する
+
+`migrate-to-e2e` スキルは、Playwright、Cypress、Selenium、Appium、Detox、Maestro、
+TesterArmy のスイートを、セッションごとに 1 つのスライスずつ e2e に移行します。古いスイートは
+新しいテストと並行して実行され続けるため、どのセッションの後でも止められます。
+
+<CodeGroup>
+```bash npm
+npx skills add e2e-inc/e2e --skill migrate-to-e2e
+```
+
+```bash pnpm
+pnpm dlx skills add e2e-inc/e2e --skill migrate-to-e2e
+```
+
+```bash bun
+bunx skills add e2e-inc/e2e --skill migrate-to-e2e
+```
+</CodeGroup>
+
+その後、エージェントに `/migrate-to-e2e` を依頼してください。エージェントは選んだスライスを
+移植し、移植した各テストをすべてのターゲットで 3 回実行します。`MIGRATION.md` ファイルに、
+次のセッションのための進捗が記録されます。必要に応じて、エージェントはアプリに誤った
+チェックアウト合計などの一時的なバグを仕込み、両方のスイートがそれで失敗するかを確認します。
+エージェントは、あなたが確認した場合にのみ古いテストを削除します。最初に、使っているランナーの
+移行ガイドを読みます:
+[Playwright](/migrate/playwright)、[Cypress](/migrate/cypress)、
+[Selenium](/migrate/selenium)、[Appium](/migrate/appium)、[Detox](/migrate/detox)、
+[Maestro](/migrate/maestro)、または [TesterArmy](/migrate/testerarmy)。
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="CLI リファレンス" icon="terminal" href="/reference/cli">
+    init、guide、mcp、run をフラグごとに解説します。
+  </Card>
+  <Card title="実行のデバッグ" icon="bug" href="/debugging">
+    レポート、アーティファクト、エージェント用のフラグ。
+  </Card>
+</CardGroup>

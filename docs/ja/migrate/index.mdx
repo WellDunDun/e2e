@@ -1,0 +1,79 @@
+---
+title: e2e への移行
+sidebarTitle: 概要
+description: Playwright、Cypress、Selenium、Appium、Detox、Maestro、TesterArmy のテストスイートを、テストを 1 つずつ e2e に移行します。
+---
+
+移行ガイドは、各テストランナーの設定、API、コマンドを e2e に対応付けます。
+また、e2e にまだないもの、つまり予定されているもの、時期が未定のもの、
+e2e が意図的に含めていないものを、回避策があればそれとあわせて一覧にしています。
+回避策のないテストは古いランナーに残します。テストを 1 つずつ移行する間は
+古いテストスイートをインストールしたままにして、両方のテストスイートが成功する状態を保ちます。
+
+## ランナーを選ぶ
+
+<CardGroup cols={2}>
+  <Card title="Playwright" icon="/images/integrations/playwright.svg" href="/migrate/playwright">
+    Web。すべての設定キー、`page` の呼び出し、CLI フラグを e2e に対応付けます。
+  </Card>
+  <Card title="Cypress" icon="/images/integrations/cypress.svg" href="/migrate/cypress">
+    Web。コマンドチェーンは async のテストになります。`data-cy` 属性はそのまま使えます。
+  </Card>
+  <Card title="Selenium" icon="/images/integrations/selenium.svg" href="/migrate/selenium">
+    Web。WebDriver の呼び出しとページオブジェクトを TypeScript で書き直します。
+  </Card>
+  <Card title="Appium" icon="/images/integrations/appium.png" href="/migrate/appium">
+    モバイル。capabilities、セレクター、`mobile:` コマンドを、サーバーなしで移行します。
+  </Card>
+  <Card title="Detox" icon="/images/integrations/detox.png" href="/migrate/detox">
+    モバイル。アプリのビルドと testID をそのまま使い、Detox フレームワークは不要です。
+  </Card>
+  <Card title="Maestro" icon="/images/integrations/maestro.svg" href="/migrate/maestro">
+    モバイル。YAML のフローが TypeScript のテストになります。
+  </Card>
+  <Card title="TesterArmy" icon="/images/integrations/testerarmy.png" href="/migrate/testerarmy">
+    Web とモバイル。保存済みのテストが、リポジトリ内のエージェントステップになります。
+  </Card>
+</CardGroup>
+
+## テストを 1 つずつ移行する
+
+<Note>まず [クイックスタート](/quickstart) で e2e をインストールしてください。モデルが必要なのはエージェントステップだけです。</Note>
+
+e2e のテストは Node で実行され、デフォルトは TypeScript ですが
+[JavaScript](/reference/config#javascript) でも書けます。Java、Python、ネイティブのテストスイートの場合は、
+独自の `package.json` を持つ `e2e/` フォルダーに e2e をインストールします。
+
+どのガイドも同じステップに従います。
+
+1. 設定を移植します。古いランナーのベース URL、アプリのコマンド、デバイスは、
+   `e2e.config.ts` のターゲットになります。
+2. テストを 1 つ、`tests/` の下の `.e2e.ts` ファイルとして書き直します。
+   2 つのランナーのファイルパターンは分けておき、どちらも相手のテストを実行しないようにします。
+3. 新しいテストが成功するまで `npx e2e run <file>` で実行します。
+4. 新しいテストを信頼できるようになったら、古いテストを削除します。
+
+## エージェントにテストスイートを移行させる
+
+コーディングエージェントでテストを 1 つ移行するには、各ランナーのガイドの冒頭にある
+エージェント用プロンプトをコピーします。複数のセッションにまたがる移行には、
+[`migrate-to-e2e` スキル](/coding-agents#migrate-an-existing-suite) を使います。
+このスキルは進捗を `MIGRATION.md` ファイルに記録し、古いテストスイートを実行可能なまま保ちます。
+
+## ガイドのないランナーから移行する
+
+Web 向けの WebdriverIO にはガイドがありません。WebDriver の呼び出しは
+[Selenium](/migrate/selenium) ガイドで対応付けてください。この対応付けは部分的なもので、
+WebdriverIO の API そのものを扱うガイドはありません。モバイルアプリで Appium と組み合わせた
+WebdriverIO については、[Appium から](/migrate/appium) を参照してください。
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="コアコンセプト" icon="pen-to-square" href="/core-concepts">
+    スクリプト化したセレクターの代わりに、ゴール、アサーション、ロケーターを使います。
+  </Card>
+  <Card title="コーディングエージェント" icon="robot" href="/coding-agents">
+    e2e のスキル、MCP サーバー、そしてエージェントがテストを書く仕組み。
+  </Card>
+</CardGroup>

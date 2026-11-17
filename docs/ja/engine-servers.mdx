@@ -1,0 +1,161 @@
+---
+title: エンジンサーバー
+description: エンジンを別のプロセス、別のマシン、または別の言語で実行します。
+---
+
+エンジンサーバーは、ランナーのプロセスの外で [エンジンプロトコル](/reference/engine-protocol) に
+応答します。子プロセス、別のマシン、またはデバイス上で動作し、任意の言語で書けます。
+`connectEngine` はサーバーをエンジンハンドルに変換し、ランナーはそれを他のエンジンと同じように操作します。
+
+## サーバーに接続する
+
+`connectEngine` のハンドルをターゲットのエンジンとして設定します。マニフェストは、サーバーが
+何に応答するかを示します。ランナーは、どのサーバーも起動する前の設定の読み込み時にこれを必要とします。
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { connectEngine, spawnTransport } from 'e2e/engine';
+
+export default {
+  targets: [
+    {
+      name: 'kiosk',
+      engine: connectEngine({
+        manifest: {
+          name: 'kiosk',
+          version: '1.0.0',
+          spiVersion: 1,
+          platform: 'kiosk',
+          methods: ['engine/observe', 'engine/perform'],
+          actions: ['tap'],
+        },
+        transport: spawnTransport({ command: './kiosk-engine' }),
+        resolveLocators: true,
+      }),
+    },
+  ],
+} satisfies E2EConfig;
+```
+
+- `initialize` で得られるサーバーのマニフェストは、宣言したものと一致する必要があります。
+  異なる場合、最初の接続が `ENGINE_FAILURE` で失敗し、異なる各フィールドが示されます。
+- `resolveLocators` を指定すると、クライアントが各観察に対してロケーターを解決するため、
+  サーバーはツリーを生成するだけで済みます。
+- `spawnTransport` は接続ごとにサーバーを起動します。`socketTransport` は、すでにポートで
+  待ち受けているサーバーに接続します。
+
+<Warning>
+サーバーは、ランナーのプロセス内のエンジンが受け取るものと同じものを受け取ります。
+つまり、モデルキーや `E2E_SECRET_*` の値を含む実行の環境変数と、平文のシークレットです。
+信頼できるサーバーにだけ、信頼できるチャネルを通じて接続してください。
+`socketTransport` は暗号化を行いません。
+</Warning>
+
+## ホスト側の処理をクライアントに残す
+
+一部のメンバーは関数を保持していたり、ランナーが動作しているマシンを必要としたりします。
+それらは `connectEngine` に渡してください。ランナーのプロセス内で実行されます。
+
+| オプション | クライアントで実行されるもの |
+| --- | --- |
+| `fixtures` | `device` フィクスチャなどのフィクスチャファクトリー。エンジンのメンバーを通じてサーバーにアクセスします。 |
+| `validateApp` | 設定の読み込み時のアプリのチェック。 |
+| `secrets` | サーバーが解決できる `secrets.get()` のハンドル。 |
+| `session` | `simctl` でアプリを再起動するなど、サーバーのものを置き換えるセッションフック。 |
+
+```ts
+const engine = connectEngine({
+  manifest,
+  transport,
+  session: { restart: (operation) => relaunch(operation) },
+  fixtures: {
+    device: (context) => context.fixture('device', { back: () => engine.session!.back!(context.operation()) }, { back: { kind: 'resource' } }),
+  },
+});
+```
+
+## TypeScript のエンジンを提供する
+
+`serveEngine` は、`defineEngine` のエンジンを使って、デフォルトでは stdin と stdout 経由で
+プロトコルに応答します。これを `spawnTransport` のコマンドとして実行し、
+`describeEngine` でそのマニフェストを宣言します。
+
+```ts title="server.ts"
+import { serveEngine } from 'e2e/engine';
+import { kiosk } from './src/index.ts';
+
+await serveEngine((options) => kiosk(options as { host: string }));
+```
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { connectEngine, describeEngine, spawnTransport } from 'e2e/engine';
+import { kiosk } from './src/index.ts';
+
+export default {
+  targets: [
+    {
+      name: 'kiosk',
+      engine: connectEngine({
+        manifest: describeEngine(kiosk({ host: 'localhost' })),
+        transport: spawnTransport({ command: 'node', args: ['server.ts'] }),
+        initializationOptions: { host: 'localhost' },
+      }),
+    },
+  ],
+} satisfies E2EConfig;
+```
+
+サーバー自身のログは stderr に出力してください。stdout はプロトコルの通信に使われます。
+
+## 別の言語でサーバーを書く
+
+サーバーは、Language Server と同じように、`Content-Length` ヘッダーの後に続く
+JSON-RPC 2.0 のメッセージを読み書きします。サーバーは次のものに応答します。
+
+1. `initialize` には `{ protocolVersion: 1, manifest }` で応答します。それ以外の
+   プロトコルバージョンは拒否してください。
+2. `engine/observe` など、マニフェストに列挙された各メソッド。パラメーターは、
+   名前で指定されたメンバーの引数です。
+3. `shutdown`、続いて `exit` 通知。その後、サーバーは停止します。
+
+知らない通知は無視してください。失敗は、`data` に e2e のエラーを入れたエラー `-32000` として
+報告します。そうすると、ランナーはそれをローカルのエンジンのエラーと同じように分類します。
+[メッセージリファレンス](/reference/engine-protocol#messages) に、すべてのパラメーターと
+結果の形式が記載されています。マニフェストの JSON Schema は、`e2e` パッケージに
+`schema/engine-manifest-v1.schema.json` として同梱されています。
+
+## トランスポートを書く
+
+デバイスへのアプリのインストールやポートフォワーディングなど、サーバーに事前のセットアップが必要な
+場合はトランスポートを書きます。別の場所にあるサーバーはプロジェクトのファイルを読めないため、
+`open` はターゲットのアプリを受け取ります。`e2e doctor` が開く `doctor` 接続は確認だけを行うため、
+そこではインストールをスキップしてください。
+
+```ts
+import type { EngineTransport } from 'e2e/engine';
+
+export function deviceTransport(serial: string): EngineTransport {
+  return {
+    label: `device ${serial}`,
+    async open(context) {
+      if (context.role !== 'doctor' && context.app?.appPath !== undefined) {
+        await install(serial, context.app.appPath);
+      }
+      const socket = await forward(serial, context.signal);
+      return { input: socket, output: socket, close: async () => void socket.destroy() };
+    },
+  };
+}
+```
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="エンジンプロトコル" icon="book" href="/reference/engine-protocol">
+    すべての関数、メッセージ、エラーコード。
+  </Card>
+  <Card title="エンジンを書く" icon="code" href="/writing-an-engine">
+    エンジンが実装するメンバーを TypeScript で。
+  </Card>
+</CardGroup>

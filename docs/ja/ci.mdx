@@ -1,0 +1,288 @@
+---
+title: 継続的インテグレーション
+sidebarTitle: CI のセットアップ
+description: GitHub Actions、Vercel のデプロイ、GitLab CI/CD、Expo Workflows、Bitrise、Codemagic、Norrix、または Node を実行できる任意の CI サービスで e2e を実行します。
+"og:image": "https://e2e.com/docs/images/og/ci.png?v=01be716140"
+"twitter:image": "https://e2e.com/docs/images/og/ci.png?v=01be716140"
+---
+
+e2e は、Node 24.8 以降（Node 22 では 22.22.3 以降）、または Web テストの場合は
+[Bun](/reference/cli#bun) 1.4.3 以降を実行できるすべての CI サービスで動作します。
+各ジョブは依存関係をインストールし、アプリまたはデバイスを起動し、テストを実行して、
+`.e2e/` をアップロードします。
+
+## CI サービスを選ぶ
+
+<CardGroup cols={2}>
+  <Card title="GitHub Actions" icon="/images/integrations/github-actions.svg" href="/ci/github-actions">
+    Web とモバイルのワークフロー。結果をプルリクエストのコメントとして投稿します。
+  </Card>
+  <Card title="Vercel Previews" icon="/images/integrations/vercel.svg" href="/ci/vercel-previews">
+    各デプロイをテストし、テストが成功するまで本番リリースを保留します。
+  </Card>
+  <Card title="GitLab CI/CD" icon="/images/integrations/gitlab.svg" href="/ci/gitlab">
+    Web とモバイルのジョブ。結果をマージリクエストに表示します。
+  </Card>
+  <Card title="Expo Workflows" icon="/images/integrations/expo.svg" href="/ci/eas-workflows">
+    Expo Build で Expo アプリをビルドし、それに対して iOS と Android のテストを実行します。
+  </Card>
+  <Card title="Bitrise" icon="/images/integrations/bitrise.svg" href="/ci/bitrise">
+    シミュレーターとエミュレーター用の Bitrise ステップを使った iOS と Android のワークフロー。
+  </Card>
+  <Card title="Codemagic" icon="/images/integrations/codemagic.svg" href="/ci/codemagic">
+    Mac mini と Linux インスタンス上の iOS と Android のワークフロー。
+  </Card>
+  <Card title="Norrix" icon="/images/integrations/norrix.png" href="/ci/norrix">
+    Norrix で NativeScript アプリをビルドし、Norrix のシミュレーターまたはエミュレーターでスイートを実行します。
+  </Card>
+</CardGroup>
+
+ほかの CI サービスでは、[GitHub Actions](/ci/github-actions) のワークフローをコピーしてください。
+ホスト型サービスからブラウザやデバイスを借りるには、
+[ホスト型ブラウザとデバイス](/integrations)を参照してください。
+
+## レポートをアップロードする
+
+各ジョブの最後に、テストが失敗した場合も含めて `.e2e/` をアップロードします。中身は次のとおりです。
+
+| パス | 内容 |
+| --- | --- |
+| `report.json` | テストまで到達した各実行の実行レポート |
+| `junit.xml` | `junit` レポーター（`--reporter list,junit`）を使った場合: 結果、[テストフィルター](/filters)が除外したテスト（スキップとして記録）、および `run` スイート内の `APP_UNREACHABLE` などの起動時の失敗 |
+| `results/` | 各テストのトレースページ、スクリーンショット、画面ダンプ。`--video` を指定した場合は、エンジンが録画できる各ターゲットの動画も含みます |
+
+CI サービスのテストレポート連携の対象を `.e2e/junit.xml` に設定してください。
+GitLab では、`junit.xml` が各失敗のスクリーンショットへのリンクも含むため、テストレポートに表示されます。
+[`output`](/reference/config#output) オプションで `.e2e/` の場所を変更できます。
+
+## モデルの認証情報
+
+`AI_GATEWAY_API_KEY` など、プロバイダーが必要とする認証情報をジョブに渡します
+（[モデル](/models)を参照）。`agent` を一切使わないテストには不要です。
+
+<Warning>
+キーを持つ各ジョブは、実行するコード（テスト、設定、依存関係）にそのキーを渡します。
+キーは信頼できるブランチのビルドにのみ渡してください。信頼できないプルリクエストのコードは、
+シークレットも書き込みトークンもない状態で実行してください。
+[セキュリティ](/security)を参照してください。
+</Warning>
+
+キーは CI のシークレットに保存し、可能な場合は利用上限を設定してください。GitHub は
+フォークからのプルリクエストにシークレットを渡しません。
+
+## CI で変わること
+
+`CI` に空文字列、`0`、`false` 以外の値が設定されていると、CI モードが有効になります。
+ローカルでこれらのデフォルトを使うには、`CI=1 npx e2e run` を実行します。
+
+| 設定 | ローカル | CI |
+| --- | --- | --- |
+| `retries` | `0` | `1` |
+| `workers` | コア数の半分 | `1` |
+| 未設定時の `cache` | `read-write` | `read-only` |
+| `.only` | 許可 | `ONLY_IN_CI` で拒否 |
+| `command.reuseExisting` | 有効 | 通知を出して無視 |
+
+ワーカーとリトライのデフォルトを変更するには、フラグを使います。
+
+<CodeGroup>
+```bash npm
+npx e2e run --workers 4 --retries 0
+```
+
+```bash pnpm
+pnpm exec e2e run --workers 4 --retries 0
+```
+
+```bash bun
+bunx e2e run --workers 4 --retries 0
+```
+</CodeGroup>
+
+CI から[テレメトリー](/telemetry#in-ci)を送信しないようにするには、ジョブの `env` に
+`E2E_TELEMETRY_DISABLED: '1'` を追加します。
+
+## モバイルのジョブ
+
+[ホスト型デバイスサービス](/mobile#hosted-devices)を使わない場合、各プラットフォームには
+専用のマシン、ビルド、デバイスが必要です。
+
+| | iOS | Android |
+| --- | --- | --- |
+| マシン | Xcode とシミュレーターランタイムを備えた macOS | KVM（ネストされた仮想化）を備えた Linux |
+| ビルド | Release のシミュレーター用 `.app`、署名なし | Release の `.apk` |
+| デバイス | 起動済みのシミュレーター | 起動済みのエミュレーター |
+
+両方のプラットフォームで Release ビルドを作成してください。React Native や Expo のデバッグビルドは
+JavaScript を Metro から読み込みますが、これらのジョブは Metro を起動しないため、エラー画面で
+開いてしまいます。例では、リポジトリに `ios/` と `android/` を含む React Native プロジェクトを
+使っています。それらを含まない Expo プロジェクトでは、先に `npx expo prebuild` を実行してください。
+
+ビルドをインストールしてから、スイートを実行します。
+
+<CodeGroup>
+```bash npm
+# iOS
+xcrun simctl install booted path/to/MyApp.app
+npx e2e run --target ios --reporter list,junit
+
+# Android
+adb install -r path/to/app.apk
+npx e2e run --target android --reporter list,junit
+```
+
+```bash pnpm
+# iOS
+xcrun simctl install booted path/to/MyApp.app
+pnpm exec e2e run --target ios --reporter list,junit
+
+# Android
+adb install -r path/to/app.apk
+pnpm exec e2e run --target android --reporter list,junit
+```
+
+```bash bun
+# iOS
+xcrun simctl install booted path/to/MyApp.app
+bunx e2e run --target ios --reporter list,junit
+
+# Android
+adb install -r path/to/app.apk
+bunx e2e run --target android --reporter list,junit
+```
+</CodeGroup>
+
+これらのコマンドは、`ios` と `android` という名前の 2 つのターゲットがあり、それぞれがアプリの
+`bundleId` を持つ `mobile()` エンジンであることを前提としています。
+[アプリを指定する](/mobile#point-at-your-app)を参照してください。スイートにビルドを
+インストールさせるには、`app.appPath` を設定して `device.installApp()` を呼び出します。
+
+どのサービスでも次のルールが当てはまります。
+
+- **プラットフォームごとに 1 つのジョブ。** `--target ios` は Mac で、
+  `--target android` は KVM を備えた Linux で実行します。ホスト型の Mac は Apple Silicon を
+  使っており、仮想化をネストできないため、Android エミュレーターはその上では起動しません。
+- **デバイスは専用のステップで起動する。** 起動済みのデバイスがない場合、エンジンは
+  agent-device にデバイスの起動を依頼しますが、新しい Linux ランナーにはエミュレーターの
+  イメージがありません。ステップを分けると、起動の失敗とテストの失敗を区別することもできます。
+- **iOS ランタイムを固定する。** 名前（`iPhone 17`）で選んだシミュレーターは、イメージの
+  デフォルトの iOS で動作し、アクセシビリティツリーは iOS のリリースごとに変わります。そのため、
+  ランナーイメージの更新によって、コードを変更していないのにロケーターのアサーションが失敗する
+  ことがあります。例では、指定したランタイムでシミュレーターを作成し、UDID で起動しています。
+  `iOS-26-5` は、イメージにあるランタイム（`xcrun simctl list runtimes`）に置き換えてください。
+- **`~/.agent-device/apple-runner/derived` をキャッシュする。** agent-device は、初めて
+  シミュレーターを操作するときに、そこに XCUITest ランナーをビルドします。
+  `~/.agent-device` 全体はキャッシュしないでください。残りは直前のデーモンの状態であり、
+  復元したコピーによって次の実行が `Failed to communicate with daemon` で停止することがあります。
+- **ローカルの記録をリプレイする。** リプレイキャッシュのキーはデバイスではなくアプリを含むため、
+  手元のシミュレーターで記録したステップは CI のシミュレーターでリプレイされます。
+  [リプレイキャッシュをコミットする](/cache#commit-the-replay-cache)を参照してください。
+
+## プルリクエストをゲートする
+
+0 以外の終了コードはすべてジョブを失敗させます。失敗したエージェントステップも含みます。
+失敗した実行でマージをブロックするには、e2e のジョブを必須チェックにしてください。
+[実行のデバッグ](/debugging#read-the-failure)には、各終了コードと、ジョブを再実行すると
+解決しうるかどうかが記載されています。
+
+チェックを予測可能に保つには、次のようにします。
+
+- 各 `agent.act` には 1 つの[アトミックな目標](/core-concepts#goals)を与えます。そのうえで、
+  ロケーターのアサーションまたは `agent.assert` で結果をチェックします。
+- [リプレイキャッシュをコミットします](/cache#commit-the-replay-cache)。リプレイされた
+  `agent.act` はモデルを呼び出しません。組み込みエージェントでは、キャッシュミス、
+  ハンドオフ、およびすべてのエージェントの判定（`agent.assert`、`agent.waitFor`、
+  `agent.extract`）がモデルを呼び出します。
+- 不安定なテストに注意してください。レポートは、CI のリトライでのみ成功したテストを
+  flaky としてマークします。
+- `--max-failures <n>` を追加すると、その数のテストが失敗した時点で実行を停止するため、
+  壊れたデプロイで残りの各ステップにモデル呼び出しを費やすことがなくなります。ジョブは
+  終了コード 1 で終了します。
+- `--max-duration <ms>` を追加すると、テストの実行時間を制限できます。時間の計測はアプリの
+  起動中ではなく、テストの開始時から始まります。ジョブは終了コード 1 で終了します。
+
+## 影響を受けるテストだけを実行する
+
+プルリクエストでは `--changed-since` を渡すと、[テストフィルター](/filters)が、変更の影響を
+受ける可能性の低いテストを除外できます。デシジョンフィルターのようにフィルターがテストに
+スコアを付ける場合、各ターゲットは失敗する可能性の最も高いテストのファイルから開始します。
+`main` のようにフラグがない場合は、スイート全体が実行されます。
+[デシジョンフィルターを追加する](/filters#add-the-decision-filter)を参照してください。
+
+CI のデフォルトであるワーカー 1 つの場合、ファイルの順序は関連度の帯だけで決まり、
+同順位は収集順で決まります。e2e が[タイミング履歴](#cache-the-timings-history)を読むのは、
+ワーカーが複数ある場合だけです。
+[可能性の高いものから開始する](/filters#start-the-likeliest-first)を参照してください。
+
+## タイミング履歴をキャッシュする
+
+ワーカーが複数ある場合、`e2e run` は、時間の記録がないファイルの後に、最も長いファイルから
+開始します。順序は `<output>/timings.json`（デフォルトは `.e2e/timings.json`）に基づきます。
+これは数 KB のファイルで、少なくとも 1 つのファイルを丸ごと実行した実行によって更新されます。
+新しい CI のチェックアウトにはこのファイルがないため、実行前に CI のキャッシュから復元し、
+実行後に保存してください。[GitHub Actions](/ci/github-actions#cache-the-timings-history) に
+そのステップがあります。
+
+- このファイルは参考情報です。存在しない、破損している、または無効なファイルは履歴なしとして扱われ、
+  実行は前回の `report.json` にフォールバックします。復元したファイルによってファイルの順序が
+  変わることはありますが、結果が変わることはありません。
+- 実行がファイルの時間を計測するのは、そのファイルをすべて実行した場合だけです。`--grep` や
+  `--last-failed` の実行では、一部だけ実行したファイルのエントリーはそのまま残ります。
+- CI のデフォルトはワーカー 1 つです。恩恵を受けるには、[`workers`](/reference/config#workers) を
+  設定するか、`--workers` を渡してください。
+- キャッシュのキーはブランチごとにし、`main` をフォールバックにしてください。そうすると、新しい
+  プルリクエストは `main` の履歴から開始します。[シャーディング](#sharding)を使う場合は、
+  キーにシャードのインデックスを追加してください。
+- `--timings <file>` を指定すると、別のパスを読み書きします。
+
+## シャーディング
+
+`--shard <index/total>` は、スイートの一部分を実行します。すべてのジョブはそれぞれのインデックスで
+同じコマンドを実行し、すべてのマシンが同じ方法でスイートを分割します。テストのないシャードは
+`NO_TESTS` で失敗します。マトリックスのシャード数がテスト数を上回る可能性がある場合は、
+`--pass-with-no-tests` を追加してください。分割のルールは
+[CLI リファレンス](/reference/cli#flags)に記載されています。
+
+GitHub Actions では、マトリックスによってシャードごとに 1 つのジョブが実行されます。
+
+```yaml
+jobs:
+  e2e:
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      # ...
+      - run: npx e2e run --shard ${{ matrix.shard }}/3 --reporter list,junit
+```
+
+各シャードの `report.json` と `junit.xml` は、シャードのインデックスを含む名前でアップロードしてください。
+e2e はまだシャードのレポートをマージできません。
+
+## 失敗したテストを再実行する
+
+`--last-failed` は、前回の実行で成功しなかったテストだけを実行します。対象は出力ディレクトリの
+`report.json` から読み取られます。最初の実行と同じステップで実行してください。
+
+```yaml
+      - run: npx e2e run || npx e2e run --last-failed
+```
+
+再実行は最初の実行のアーティファクトを保持し、自身のアーティファクトを各テストのディレクトリの
+`rerun-<n>/` に書き込むため、1 回のアップロードで両方を含められます。何が成功しなかったものと
+みなされるかは、[CLI リファレンス](/reference/cli#flags)に記載されています。
+
+別のジョブでは、そのランナー上にレポートがありません。先にレポートを出力ディレクトリに
+ダウンロードするか、失敗したジョブを再実行してください。
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="プルリクエストのコメント" icon="code-pull-request" href="/github">
+    実行ごとに 1 つのコメント。再実行時はその場で編集されます。
+  </Card>
+  <Card title="CLI リファレンス" icon="terminal" href="/reference/cli">
+    フラグ、レポーター、すべての終了コード。
+  </Card>
+</CardGroup>

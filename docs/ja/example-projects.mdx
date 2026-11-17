@@ -1,0 +1,65 @@
+---
+title: サンプルプロジェクト
+description: Vite、Next.js、Astro、Angular、Expo、SwiftUI、Jetpack Compose、Kotlin Multiplatform、Flutter、.NET MAUI を使った単体の e2e サンプルを実行します。
+"og:image": "https://e2e.com/docs/images/og/example-projects.png?v=dc027fe862"
+"twitter:image": "https://e2e.com/docs/images/og/example-projects.png?v=dc027fe862"
+---
+
+各サンプルは単体で動くあいさつアプリで、3 つのロケーターテストと 2 つの
+エージェントテストがあります。エージェントテストの 1 つは名前に対するあいさつを取得し、もう 1 つは
+名前が空のときのエラーをチェックします。各サンプルは、公開済みの e2e パッケージを npm からインストールします。
+
+## サンプルを選ぶ
+
+<CardGroup cols={2}>
+  <Card title="Vite" icon="/images/examples/vite.svg" href="https://github.com/e2e-inc/e2e/tree/main/examples/with-vite" cta="View example" arrow>
+    Vite を使った React。Chromium でテストします。
+  </Card>
+  <Card title="Next.js" icon="/images/examples/nextjs.svg" href="https://github.com/e2e-inc/e2e/tree/main/examples/with-next" cta="View example" arrow>
+    Next.js App Router。ランナーが起動し、Chromium でテストします。
+  </Card>
+  <Card title="Astro" icon="/images/examples/astro.svg" href="https://github.com/e2e-inc/e2e/tree/main/examples/with-astro" cta="View example" arrow>
+    UI フレームワークを使わない Astro のページ。ランナーが起動し、Chromium でテストします。
+  </Card>
+  <Card title="Angular" icon="/images/examples/angular.svg" href="https://github.com/e2e-inc/e2e/tree/main/examples/with-angular" cta="View example" arrow>
+    スタンドアロンの Angular コンポーネント。ランナーが起動し、Chromium でテストします。
+  </Card>
+  <Card title="Expo" icon="/images/integrations/expo.svg" href="https://github.com/e2e-inc/e2e/tree/main/examples/with-expo" cta="View example" arrow>
+    Expo を使った React Native。Web、iOS、Android でテストします。
+  </Card>
+  <Card title="SwiftUI" icon="/images/examples/swiftui.png" href="https://github.com/e2e-inc/e2e/tree/main/examples/with-swiftui" cta="View example" arrow>
+    ネイティブの iOS アプリ。iPhone シミュレーターでテストします。
+  </Card>
+  <Card title="Jetpack Compose" icon="/images/examples/jetpack-compose.svg" href="https://github.com/e2e-inc/e2e/tree/main/examples/with-compose" cta="View example" arrow>
+    ネイティブの Android アプリ。エミュレーターでテストします。
+  </Card>
+  <Card title="Kotlin Multiplatform" icon="/images/examples/kotlin.svg" href="https://github.com/e2e-inc/e2e/tree/main/examples/with-kotlin-multiplatform" cta="View example" arrow>
+    Compose Multiplatform の 1 つの画面。Android と iOS でテストします。
+  </Card>
+  <Card title="Flutter" icon="/images/examples/flutter.svg" href="https://github.com/e2e-inc/e2e/tree/main/examples/with-flutter" cta="View example" arrow>
+    Flutter アプリ。Android と iOS でテストします。
+  </Card>
+  <Card title=".NET MAUI" icon="/images/examples/dotnet.svg" href="https://github.com/e2e-inc/e2e/tree/main/examples/with-maui" cta="View example" arrow>
+    .NET MAUI アプリ。Android と iOS でテストします。
+  </Card>
+</CardGroup>
+
+## サンプルを実行する
+
+プロジェクトの README に従って、インストール、ビルド、実行を行います。設定と
+テストはアプリの隣に置かれています。ネイティブ、Flutter、.NET MAUI のプロジェクトでは
+`e2e/` フォルダーにあります。
+
+ロケーターテストにはモデルは必要ありません。エージェントテストは Vercel AI Gateway を使い、
+`AI_GATEWAY_API_KEY` が設定されていない場合はスキップされます。
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="クイックスタート" icon="rocket" href="/quickstart">
+    自分のアプリに e2e を追加します。
+  </Card>
+  <Card title="モデル" icon="brain" href="/models">
+    別のプロバイダー、サブスクリプション、またはローカルモデルを使います。
+  </Card>
+</CardGroup>

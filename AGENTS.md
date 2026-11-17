@@ -290,6 +290,10 @@ suites that consume the built packages the way a user would.
   block that runs `npx` or `npm install`/`ci` sits in a `<CodeGroup>` of
   `npm`, `pnpm`, and `bun` blocks, which the site syncs site-wide, enforced
   by `scripts/check-docs-package-managers.ts`).
+  `docs/ja/` holds the Japanese translation, one page per English page at
+  the same path, with the tab and group labels in `docs/ja/navigation.json`;
+  a translation keeps its English page's outline
+  (`scripts/check-docs-translations.ts`, `authoring-docs` "Translations").
   The `e2e` build copies the
   pages to `packages/e2e/docs/` (gitignored,
   `packages/e2e/scripts/prepare-build.ts`) so the published package ships

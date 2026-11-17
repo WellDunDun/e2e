@@ -1,0 +1,279 @@
+---
+title: "@e2e-dev/core"
+description: テストランナーなしで、普通のコードからブラウザやネイティブアプリを操作します。エージェントも任意で使えます。
+---
+
+`@e2e-dev/core` は、普通のコードからブラウザや iOS、Android のアプリを操作します。
+e2e のエンジン、`screen`、エージェントを使いますが、テストランナーは使いません。
+設定ファイルも、レポートも、`expect` もありません。スクリプト、自動化、
+スクレイパー、ボットに使ってください。
+
+## インストール
+
+<CodeGroup>
+
+```bash npm
+npm install @e2e-dev/core @e2e-dev/web
+```
+
+```bash pnpm
+pnpm add @e2e-dev/core @e2e-dev/web
+```
+
+```bash bun
+bun add @e2e-dev/core @e2e-dev/web
+```
+
+</CodeGroup>
+
+デバイスを操作するには、`@e2e-dev/web` の代わりに、またはそれと並べて
+`@e2e-dev/mobile` をインストールします。`@e2e-dev/core` には、それを土台に作られた
+テストランナーである `e2e` は不要です。
+
+<Note>
+例のように、エンジンは `/engine` エントリーから import してください。メインエントリーも
+`e2e` なしで動作しますが、その `test` は `RUNNER_NOT_INSTALLED` をスローし、
+その型は `skipLibCheck` が有効でない限り `e2e` を必要とします。
+</Note>
+
+## ブラウザを操作する
+
+`launch` はエンジンを準備し、ホストを返します。セッションはそのホスト上の 1 つの
+分離されたブラウザコンテキストで、`screen`、`app`、`platform`、そしてエンジン独自の
+フィクスチャ（ここでは `browser`）を持ちます。
+
+```ts title="prices.ts"
+import { launch } from '@e2e-dev/core';
+import { web } from '@e2e-dev/web/engine';
+
+await using shop = await launch(web(), { app: { url: 'https://shop.example.com' } });
+
+for (const sku of ['A-1001', 'B-2040']) {
+  await using session = await shop.newSession();
+  await session.app.open(`/products/${sku}`);
+  if (await session.screen.getByText('Sold out', { exact: false, visible: true }).isVisible()) continue;
+  const price = await session.screen.getByTestId('sale-price').textContent();
+  console.log(sku, price);
+}
+```
+
+`screen` と `app` はテストの中と同じ API です。[screen](/reference/screen) と
+[app](/reference/app) を参照してください。`await using` は各セッションをそのブロックの
+終わりで閉じ、ホストとそのブラウザをファイルの終わりで閉じます。これには Node.js 24
+または Bun が必要です。Node.js 22 では、`finally` の中で `close()` を呼び出してください。
+
+```ts
+const shop = await launch(web(), { app: { url: 'https://shop.example.com' } });
+try {
+  const session = await shop.newSession();
+  await session.app.open('/products/A-1001');
+} finally {
+  await shop.close(); // closes the open session too
+}
+```
+
+| ルール | 動作 |
+| --- | --- |
+| 所有権 | 各 `launch` は専用のエンジンインスタンスを受け取ります: `launch(web())`。同じインスタンス上の 2 つ目のホストは `WORKER_PROTOCOL` で失敗します。 |
+| セッション | 1 つのホストで同時に開けるセッションは 1 つです。`newSession()` の前に閉じてください。並列に作業するには、ホストを追加で起動します。 |
+| タイムアウト | アクション、待機、読み取りには 30000 ms が与えられます。`app.open()` と `app.restart()` には 120000 ms が与えられます。`launch({ timeout })` または `session.setDefaultTimeout(ms)` で、これらすべてに 1 つの値を設定します。セッション全体の期限はありません。 |
+| キャンセル | `launch({ signal })` と `newSession({ signal })` は実行中の処理を停止します。 |
+| Ctrl-C | ホストは SIGINT、SIGTERM、SIGHUP で閉じるため、そのブラウザやデバイスのセッションが残りません。その後、プログラム自身がそのシグナルを監視していない限り、プログラムはシグナルによって終了します。`handleSignals: false` で無効にできます。 |
+| ファイル | スクリーンショットとダウンロードは、ホストが閉じると削除される一時ディレクトリに保存されます。残すには `artifactsDir` を設定してください。 |
+
+[リファレンス](/reference/core) にすべてのオプションが記載されています。
+
+## デバイス上のアプリを操作する
+
+`mobile()` とアプリを渡します。同じ `screen` のコードがブラウザでもデバイスでも
+動作します。
+
+```ts
+import { launch } from '@e2e-dev/core';
+import { mobile } from '@e2e-dev/mobile/engine';
+
+await using shopApp = await launch(mobile({ platform: 'ios' }), {
+  app: { bundleId: 'com.example.shop', linkBase: 'https://shop.example.com' },
+});
+await using session = await shopApp.newSession();
+await session.app.open('/products/A-1001');
+```
+
+`app.linkBase` を設定すると、`app.open(path)` はアプリ内でリンクを開きます。
+この例では `https://shop.example.com/products/A-1001` がユニバーサルリンクとして開かれ、
+`linkBase: 'shopapp://'` なら `shopapp://products/A-1001` が開かれます。設定しない場合、
+`app.open()` はアプリを起動するだけで、パスを受け取りません。`linkBase` は
+`e2e.config.ts` のターゲットでも使えます。[設定](/reference/config#linkbase) を参照してください。
+
+iOS シミュレーターは、カスタムスキームのリンクを「Open in ...?」というプロンプトで
+止めることがあります。表示されたら、その `Open` ボタンをタップしてください:
+`session.screen.getByRole('button', 'Open')`。
+
+## サインイン状態を保持する
+
+`session.saveState()` は、ブラウザセッションの Cookie とストレージをメモリに取り込みます。
+そのセッションを閉じてから、`newSession({ state })` でその状態から別のセッションを
+開始します。モバイルエンジンには取り込む状態がないため、そこでは
+`UNSUPPORTED_CAPABILITY` で失敗します。
+
+```ts
+const state = await session.saveState();
+await session.close();
+await using next = await shop.newSession({ state });
+```
+
+プログラムの実行をまたいで状態を保持するには、シークレットストアなどで管理する
+32 バイトの鍵で暗号化してください。平文でのエクスポートはありません。
+
+```ts
+import { randomBytes } from 'node:crypto';
+import { SessionState } from '@e2e-dev/core';
+
+const key = randomBytes(32);
+const bytes = await state.export({ key }); // write these to disk
+const restored = await SessionState.import(bytes, { key });
+```
+
+状態は、同じエンジン、プラットフォーム、アプリのホストでのみ復元できます。それ以外は
+`SESSION_MISMATCH` になります。`localhost` と `127.0.0.1` のように 1 つのアプリの
+2 つのアドレスは、両方のホストが同じ `app.identity` を設定しない限り、2 つのアプリとして
+扱われます。鍵が間違っている場合やバイトが変更されている場合は `SESSION_INVALID` になります。
+
+## シークレットを渡す
+
+シークレットの値を `launch` に渡し、名前で入力します。
+
+```ts
+await using shop = await launch(web(), {
+  app: { url: 'https://shop.example.com' },
+  secrets: { SHOP_PASSWORD: process.env.SHOP_PASSWORD! },
+});
+await session.screen.getByLabel('Password').fill(shop.secret('SHOP_PASSWORD'));
+```
+
+値は、セッションがスローするエラー、`screen.tree()`、エージェントが読み取る内容には
+決して現れません。`textContent()` のように自分のコードが要求する読み取りは、ページの
+テキストをそのまま返します。エクスポートされた状態は、セッションが知っていた値を
+暗号化して保持するため、それらの値なしで起動したホストでも値は伏せられます。
+
+エージェントは、パラメーターを通じて名前だけでシークレットを受け取ります:
+`agent.act('Sign in with {password}', { params: { password: shop.secret('SHOP_PASSWORD') } })`。
+
+## エラーを処理する
+
+すべての失敗は `code` を持つエラーです。`instanceof` ではなく `isE2EError` で
+確認してください。
+
+```ts
+import { isE2EError } from '@e2e-dev/core';
+
+try {
+  await session.screen.getByRole('button', 'Add to cart').tap();
+} catch (error) {
+  if (isE2EError(error) && error.code === 'LOCATOR_NOT_FOUND') console.log('not on sale');
+  else throw error;
+}
+```
+
+| コード | 発生するとき |
+| --- | --- |
+| `LOCATOR_NOT_FOUND` | タイムアウトまでに何も一致しなかった。時間切れになった待機もこのコードになります。 |
+| `LOCATOR_AMBIGUOUS` | ロケーターが複数のノードに一致した。 |
+| `ACTION_FAILED` | アクションが完了しなかった。それでもアプリに届いている可能性があるため、支払いを繰り返さないでください。 |
+| `APP_UNREACHABLE` | アプリの URL で何も応答しなかった。 |
+| `CANCELLED` | `signal` が操作を中断した、またはセッションが閉じられている。 |
+| `WORKER_PROTOCOL` | ホスト上の 2 つ目のセッション、1 つのエンジンインスタンス上の 2 つ目のホスト、または閉じられたホスト。 |
+
+[エラー](/reference/errors) にすべてのコードが記載されています。
+
+## エージェントに操作させる
+
+`@e2e-dev/core/agent` の `createAgent` は、1 つのセッションの上にエージェントを置きます。
+その `act`、`assert`、`waitFor`、`extract` は [テスト](/reference/agent) の中と同じように
+動作します。エージェントには AI SDK が必要で、この例は `zod` で型付きの結果を読み取ります。
+エンジンと並べて `ai` と `zod` をインストールしてください。
+
+```ts title="checkout.ts"
+import { launch } from '@e2e-dev/core';
+import { createAgent } from '@e2e-dev/core/agent';
+import { web } from '@e2e-dev/web/engine';
+import { gateway } from 'ai';
+import { z } from 'zod';
+
+await using shop = await launch(web(), { app: { url: 'https://shop.example.com' } });
+await using session = await shop.newSession();
+await session.app.open('/products/A-1001');
+
+const agent = createAgent(session, {
+  model: gateway('anthropic/claude-sonnet-5-5'),
+  cache: { dir: '.shop-bot/cache' },
+});
+
+await agent.act('Add the item to the cart and apply the coupon with the largest discount', {
+  cacheKey: 'cart-best-coupon',
+});
+// A check after the step lets the cache keep its recording.
+await session.screen.getByRole('button', /pay now/i).waitFor();
+
+const order = await agent.extract('the order total', { schema: z.object({ total: z.number() }) });
+if (order.total <= 39_000) {
+  try {
+    await session.screen.getByRole('button', /pay now/i).tap();
+  } catch (error) {
+    // A failed tap may still have reached the server: check the order list, never retry the payment.
+    console.error('check /my/orders');
+    throw error;
+  }
+} else {
+  console.log(`the total, ${order.total}, is over the limit: the order stays unpaid`);
+}
+```
+
+`createAgent` は、`model`、`judge`、`maxSteps`、`context` など
+[`agents` エントリー](/reference/config#agents) のオプションに加えて `cache` を受け取ります。
+デフォルトのモデルはありません。モデルのないエージェントは最初の呼び出しで
+`MODEL_UNAVAILABLE` で失敗します。`act` ステップには独自のタイムアウト 120000 ms が
+あります。呼び出しごとに `timeout` で設定してください。
+
+### 記録したステップをリプレイする
+
+`cache` を指定すると、`act` は各フローを記録し、次回の実行ではモデルを呼び出さずに
+リプレイします。その場合、すべての `act` は `cacheKey` で記録に名前を付けるか、
+`cache: false` でライブ実行する必要があります。どちらもない `act` は `INVALID_ARGUMENT` で
+失敗し、`createAgent` の呼び出しに `cache` オプションが書かれていれば TypeScript が
+それを拒否します。
+
+記録のキーは、`cacheKey`、指示、そのパラメーター、アプリ、そしてセッションが同じ呼び出しを
+行った回数です。実行ごとに変わる値はパラメーターとして渡してください。エージェントが画面から
+読み取る値は、実行のたびにモデルが改めて決めます。
+
+記録は、セッションまたはそのホストが閉じたときに保存されます。ただし、ステップの後に
+`locator.waitFor()`、`agent.assert`、`agent.waitFor` などの確認が成功した場合に限ります。
+エージェントステップが失敗すると、その時点でまだ確認されていない記録は破棄されます。
+時間切れになった `waitFor` など、自分のコードのロケーター呼び出しが失敗しても何も破棄されません。
+リプレイがどのように画面を確認し、モデルに引き継ぐかについては [リプレイキャッシュ](/cache) を
+参照してください。
+
+| オプション | デフォルト | 意味 |
+| --- | --- | --- |
+| `dir` | `.e2e/cache` | ディレクトリ。`launch` の `cwd` からの相対パスです。 |
+| `mode` | `read-write` | `read-only` はリプレイのみ行い、書き込みません。 |
+| `strict` | `false` | リプレイできなくなった記録は `REPLAY_STALE` で失敗します。 |
+| `store` | - | ファイルの代わりに使うカスタムの [`CacheStore`](/cache)。 |
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="@e2e-dev/core リファレンス" href="/reference/core">
+    `launch`、セッション、保存された状態、`createAgent` のすべてのオプション。
+  </Card>
+  <Card title="screen" href="/reference/screen">
+    セッションが持つすべてのクエリとアクション。
+  </Card>
+  <Card title="エージェント" href="/reference/agent">
+    `act`、`assert`、`waitFor`、`extract` が受け取るものと返すもの。
+  </Card>
+  <Card title="モデル" href="/models">
+    エージェントが呼び出すモデルを選んで設定します。
+  </Card>
+</CardGroup>

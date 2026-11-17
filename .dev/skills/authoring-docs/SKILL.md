@@ -440,6 +440,24 @@ Each group opens with one table, one row per entry. Keep it to the minimum:
 - Add no claim the old page or the source (`packages/*/src`) does not make.
   Check a default or a "Throws" condition in the source before you write it.
 
+## Translations
+
+`docs/ja/<path>.mdx` is the Japanese page for `docs/<path>.mdx`;
+[`docs/ja/README.md`](../../../docs/ja/README.md) has the rules, style, and
+glossary. The site gives a translated page the English page's heading, tab,
+and accordion ids by position, so a translation must keep the English
+outline, and `pnpm docs:check` (`scripts/check-docs-translations.ts`) fails
+when it does not.
+
+- Editing prose on an English page needs no Japanese change; the
+  translation is stale until someone updates it, and the site still serves it.
+- Adding, removing, or reordering a heading, `<Tab>`, `<Accordion>`, or `id`
+  needs the same change in `docs/ja/`. An English placeholder heading is fine.
+- A new English page needs nothing: the site shows it in English under
+  `/docs/ja/` until a translation exists.
+- A new tab or group in `docs.json` needs its label in
+  `docs/ja/navigation.json`.
+
 ## Before you commit
 
 - [ ] On a reference page: the first `##` is `## Reference`, every summary
@@ -471,4 +489,5 @@ Each group opens with one table, one row per entry. Keep it to the minimum:
       ([Vendor logos](#vendor-logos)) and a card on its section's
       overview.
 - [ ] Links and anchors resolve. Moved pages have redirects.
+- [ ] A changed outline is mirrored in `docs/ja/` ([Translations](#translations)).
 - [ ] `pnpm docs:check` passes.
