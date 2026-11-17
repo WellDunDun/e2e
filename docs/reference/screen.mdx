@@ -870,11 +870,11 @@ await screen.getByLabel('Receipt').setInputFiles({
 await screen.getByLabel('Receipt').setInputFiles([]);
 ```
 
-Web only. A `FilePayload` has `name: string`, `mimeType: string`, and `buffer: Buffer`. Pass one payload or an array of payloads; do not mix paths and payloads in an array. An empty array clears the input and fires `input` and `change`. A button that opens a file chooser accepts the same inputs.
+Web only. A `FilePayload` has `name: string`, `mimeType: string`, and `buffer: Buffer`. Pass one payload or an array of payloads; do not mix paths and payloads in an array. The combined payload size must be less than 50 MiB; use paths for larger files. An empty array clears the input and fires `input` and `change`. A button that opens a file chooser accepts the same inputs.
 
 | Throws | When |
 | --- | --- |
-| `INVALID_ARGUMENT` | A blank path, an invalid payload, or a mixed array of paths and payloads. |
+| `INVALID_ARGUMENT` | A blank path, an invalid payload, mixed paths and payloads, or payloads totaling 50 MiB or more. |
 | `UNSUPPORTED_CAPABILITY` | On a device, or for payloads on an engine that does not declare `setInputFilePayloads`. |
 | `ACTION_FAILED` | A button that opens no file chooser. |
 

@@ -526,6 +526,9 @@ class LocatorImpl extends ScreenImpl implements Locator {
 
   setInputFiles(files: string | readonly string[] | FilePayload | readonly FilePayload[], options?: ActionOptions): Promise<void> {
     const list: readonly unknown[] = Array.isArray(files) ? [...files] : [files];
+    if (list.some((entry) => typeof entry === 'string') && list.some(isPlainObject)) {
+      throw new TestError('INVALID_ARGUMENT', 'File paths cannot be mixed with buffers');
+    }
     if (list.length === 0 || typeof list[0] === 'string') {
       const base = this.context.projectRoot;
       const paths = list.map((entry) => {
@@ -542,9 +545,13 @@ class LocatorImpl extends ScreenImpl implements Locator {
         throw new TestError('INVALID_ARGUMENT', 'setInputFiles payloads require a non-empty name, a mimeType string, and a Buffer');
       }
       rejectUnknownOptions('setInputFiles payload', entry, ['name', 'mimeType', 'buffer']);
-      return { name: entry['name'], mimeType: entry['mimeType'], buffer: entry['buffer'].toString('base64') };
+      return { name: entry['name'], mimeType: entry['mimeType'], buffer: entry['buffer'] };
     });
-    return this.perform('setInputFiles', { kind: 'setInputFilePayloads', files: payloads }, options);
+    if (payloads.reduce((size, file) => size + file.buffer.byteLength, 0) >= 50 * 1024 * 1024) {
+      throw new TestError('INVALID_ARGUMENT', 'Cannot set buffer larger than 50Mb, please write it to a file and pass its path instead.');
+    }
+    const snapshots = payloads.map((file) => ({ ...file, buffer: new Uint8Array(file.buffer) }));
+    return this.perform('setInputFiles', { kind: 'setInputFilePayloads', files: snapshots }, options);
   }
 
   dragTo(target: Locator, options?: ActionOptions): Promise<void> {

@@ -294,8 +294,8 @@ export type LocatorAction =
   | { readonly kind: 'setInputFiles'; readonly paths: readonly string[] }
   | {
       readonly kind: 'setInputFilePayloads';
-      /** In-memory files; `buffer` is base64 so the action survives JSON-RPC. */
-      readonly files: readonly { readonly name: string; readonly mimeType: string; readonly buffer: string }[];
+      /** In-memory files; the protocol encodes their bytes only when crossing the wire. */
+      readonly files: readonly { readonly name: string; readonly mimeType: string; readonly buffer: Uint8Array }[];
     }
   | { readonly kind: 'dragTo'; readonly target: NodeRef }
   | {

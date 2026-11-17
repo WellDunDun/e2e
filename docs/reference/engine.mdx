@@ -1143,7 +1143,7 @@ honors in `actions` and `pointerActions`.
 | `scrollIntoView` | - | yes | - |
 | `selectOption` | `value` | yes | - |
 | `setInputFiles` | `paths`; empty clears the input | yes | - |
-| `setInputFilePayloads` | `files` with `name`, `mimeType`, and base64 `buffer`; requires `filePayloads: true` on the engine | yes | - |
+| `setInputFilePayloads` | `files` with `name`, `mimeType`, and `Uint8Array` `buffer`; requires `filePayloads: true` on the engine | yes | - |
 | `dragTo` | `target`: a `NodeRef` or a `ViewportPoint` | yes | yes |
 | `swipe` | `direction`, `momentum?` | yes | yes |
 | `swipeTo` | `target`, `durationMs?` | - | yes |
@@ -1196,8 +1196,8 @@ export type LocatorAction =
   | { readonly kind: 'setInputFiles'; readonly paths: readonly string[] }
   | {
       readonly kind: 'setInputFilePayloads';
-      /** In-memory files; `buffer` is base64 so the action survives JSON-RPC. */
-      readonly files: readonly { readonly name: string; readonly mimeType: string; readonly buffer: string }[];
+      /** In-memory files; the protocol encodes their bytes only when crossing the wire. */
+      readonly files: readonly { readonly name: string; readonly mimeType: string; readonly buffer: Uint8Array }[];
     }
   | { readonly kind: 'dragTo'; readonly target: NodeRef }
   | {

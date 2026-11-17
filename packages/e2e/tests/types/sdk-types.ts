@@ -610,6 +610,8 @@ void (test.fail(false) satisfies void);
 test('gap', { fail: 'known gap' }, async () => {});
 // @ts-expect-error a group cannot expect failure; mark each test
 test.describe('gaps', { fail: true }, () => {});
+declare const payloadUploadAction: Extract<import('../../src/engine/index.ts').LocatorAction, { kind: 'setInputFilePayloads' }>;
+payloadUploadAction.files[0]!.buffer satisfies Uint8Array;
 // Existing engines can keep reading paths after narrowing the original action kind.
 declare const pathUploadAction: Extract<import('../../src/engine/index.ts').LocatorAction, { kind: 'setInputFiles' }>;
 pathUploadAction.paths satisfies readonly string[];

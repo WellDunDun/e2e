@@ -187,17 +187,62 @@ describe('locator action options', () => {
     expect(steps.all()).toEqual([expect.objectContaining({ api: 'locator.setInputFiles', status: 'passed' })]);
   });
 
-  it('encodes a single in-memory file and payload arrays without losing bytes', async () => {
+  it('rejects payload size at or above 50 MiB before lookup, dispatch, or recording', async () => {
+    const { screen, actions, steps, locate } = boxScreen();
+    const limit = 50 * 1024 * 1024;
+    const buffer = Buffer.alloc(limit + 1);
+    const file = { name: 'large.bin', mimeType: 'application/octet-stream', buffer };
+    for (const files of [
+      { ...file, buffer: buffer.subarray(0, limit) },
+      file,
+      [{ ...file, buffer: buffer.subarray(0, limit / 2) }, { ...file, buffer: buffer.subarray(limit / 2, limit) }],
+    ]) {
+      await expect(Promise.resolve().then(() => screen.getByLabel('Agree').setInputFiles(files))).rejects.toMatchObject({
+        code: 'INVALID_ARGUMENT',
+        message: 'Cannot set buffer larger than 50Mb, please write it to a file and pass its path instead.',
+      });
+    }
+    expect(locate).not.toHaveBeenCalled();
+    expect(actions).toEqual([]);
+    expect(steps.all()).toEqual([]);
+  });
+
+  it('accepts payload size just below 50 MiB', async () => {
+    const { screen, actions } = boxScreen();
+    await screen.getByLabel('Agree').setInputFiles({
+      name: 'large.bin', mimeType: 'application/octet-stream', buffer: Buffer.alloc(50 * 1024 * 1024 - 1),
+    });
+    expect(actions).toHaveLength(1);
+    const action = actions[0];
+    expect(action?.kind).toBe('setInputFilePayloads');
+    if (action?.kind === 'setInputFilePayloads') expect(action.files[0]?.buffer.byteLength).toBe(50 * 1024 * 1024 - 1);
+  });
+
+  it('rejects mixed file paths and buffers in either order', async () => {
+    const { screen, actions, locate } = boxScreen();
+    const file = { name: 'a.txt', mimeType: 'text/plain', buffer: Buffer.from('a') };
+    for (const files of [[file, 'a.txt'], ['a.txt', file]]) {
+      await expect(Promise.resolve().then(() => screen.getByLabel('Agree').setInputFiles(
+        invalid<Parameters<Locator['setInputFiles']>[0]>(files),
+      ))).rejects.toMatchObject({ code: 'INVALID_ARGUMENT', message: 'File paths cannot be mixed with buffers' });
+    }
+    expect(locate).not.toHaveBeenCalled();
+    expect(actions).toEqual([]);
+  });
+
+  it('snapshots single files and arrays as bytes without putting contents in steps', async () => {
     const { screen, steps, actions } = boxScreen();
     const file = { name: 'receipt.bin', mimeType: 'application/octet-stream', buffer: Buffer.from([0, 128, 255]) };
     await screen.getByLabel('Agree').setInputFiles(file);
     await screen.getByLabel('Agree').setInputFiles([file, { ...file, name: 'empty.bin', buffer: Buffer.alloc(0) }]);
-    const encoded = { name: file.name, mimeType: file.mimeType, buffer: 'AID/' };
+    const encoded = { name: file.name, mimeType: file.mimeType, buffer: new Uint8Array([0, 128, 255]) };
     expect(actions).toEqual([
       { kind: 'setInputFilePayloads', files: [encoded] },
-      { kind: 'setInputFilePayloads', files: [encoded, { ...encoded, name: 'empty.bin', buffer: '' }] },
+      { kind: 'setInputFilePayloads', files: [encoded, { ...encoded, name: 'empty.bin', buffer: new Uint8Array() }] },
     ]);
-    expect(JSON.parse(JSON.stringify(actions))).toEqual(actions);
+    file.buffer[0] = 99;
+    const action = actions[0];
+    if (action?.kind === 'setInputFilePayloads') expect(action.files[0]?.buffer).toEqual(new Uint8Array([0, 128, 255]));
     expect(JSON.stringify(steps.all())).not.toContain('AID/');
   });
 

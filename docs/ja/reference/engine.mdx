@@ -213,6 +213,8 @@ export interface Engine {
    * reaches the engine.
    */
   readonly tapModifiers?: boolean;
+  /** Opts in to in-memory file payloads, in addition to declaring the action. */
+  readonly filePayloads?: boolean;
   /** capability: keyboard - requires observation. Input to whatever holds focus; see `EngineKeyboard`. */
   readonly keyboard?: EngineKeyboard;
   /**
@@ -1093,6 +1095,11 @@ export type LocatorAction =
   | { readonly kind: 'press'; readonly key: Key }
   | { readonly kind: 'selectOption'; readonly value: SelectOption }
   | { readonly kind: 'setInputFiles'; readonly paths: readonly string[] }
+  | {
+      readonly kind: 'setInputFilePayloads';
+      /** In-memory files; the protocol encodes their bytes only when crossing the wire. */
+      readonly files: readonly { readonly name: string; readonly mimeType: string; readonly buffer: Uint8Array }[];
+    }
   | { readonly kind: 'dragTo'; readonly target: NodeRef }
   | {
       readonly kind: 'swipe';
@@ -1119,6 +1126,7 @@ export const LOCATOR_ACTION_KINDS = [
   'scrollIntoView',
   'selectOption',
   'setInputFiles',
+  'setInputFilePayloads',
   'dragTo',
   'swipe',
 ] as const satisfies readonly LocatorActionKind[];

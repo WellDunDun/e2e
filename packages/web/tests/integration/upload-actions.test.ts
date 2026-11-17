@@ -113,8 +113,8 @@ describe.each(KINDS)('through the %s target', (kind) => {
   ])('preserves in-memory file metadata and binary contents through a %s', async (_name, html, selector) => {
     await page.setContent(html);
     const files = [
-      { name: 'résumé.bin', mimeType: 'application/octet-stream', buffer: Buffer.from([0, 128, 255]).toString('base64') },
-      { name: 'empty.txt', mimeType: 'text/plain', buffer: '' },
+      { name: 'résumé.bin', mimeType: 'application/octet-stream', buffer: new Uint8Array([0, 128, 255]) },
+      { name: 'empty.txt', mimeType: 'text/plain', buffer: new Uint8Array() },
     ];
     await dispatchLocatorAction(await targetOf(kind, selector), { kind: 'setInputFilePayloads', files },
       { timeoutMs: 2000, signal: new AbortController().signal }, () => { throw new Error('no second target'); });

@@ -341,7 +341,7 @@ export async function dispatchLocatorAction(
       return;
     case 'setInputFilePayloads': {
       const files = action.files.map((file) => ({
-        ...file, buffer: Buffer.from(file.buffer, 'base64'),
+        ...file, buffer: Buffer.from(file.buffer),
       }));
       await uploadFiles(target, files, operation);
       return;
