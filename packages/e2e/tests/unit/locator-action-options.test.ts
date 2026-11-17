@@ -187,6 +187,37 @@ describe('locator action options', () => {
     expect(steps.all()).toEqual([expect.objectContaining({ api: 'locator.setInputFiles', status: 'passed' })]);
   });
 
+  it('encodes a single in-memory file and payload arrays without losing bytes', async () => {
+    const { screen, steps, actions } = boxScreen();
+    const file = { name: 'receipt.bin', mimeType: 'application/octet-stream', buffer: Buffer.from([0, 128, 255]) };
+    await screen.getByLabel('Agree').setInputFiles(file);
+    await screen.getByLabel('Agree').setInputFiles([file, { ...file, name: 'empty.bin', buffer: Buffer.alloc(0) }]);
+    const encoded = { name: file.name, mimeType: file.mimeType, buffer: 'AID/' };
+    expect(actions).toEqual([
+      { kind: 'setInputFiles', files: [encoded] },
+      { kind: 'setInputFiles', files: [encoded, { ...encoded, name: 'empty.bin', buffer: '' }] },
+    ]);
+    expect(JSON.parse(JSON.stringify(actions))).toEqual(actions);
+    expect(JSON.stringify(steps.all())).not.toContain('AID/');
+  });
+
+  it.each([
+    null, 42, {}, Object.assign([], { length: 1 }), { name: '', mimeType: 'text/plain', buffer: Buffer.alloc(0) },
+    { name: 'a.txt', buffer: Buffer.alloc(0) },
+    { name: 'a.txt', mimeType: 'text/plain', buffer: new Uint8Array([1]) },
+    { name: 'a.txt', mimeType: 'text/plain', buffer: 'not bytes' },
+    [{ name: 'a.txt', mimeType: 'text/plain', buffer: Buffer.alloc(0) }, 'a.txt'],
+    { name: 'a.txt', mimeType: 'text/plain', buffer: Buffer.alloc(0), typo: true },
+  ])('refuses invalid file payload %j before lookup or recording', async (files) => {
+    const { screen, steps, actions, locate } = boxScreen();
+    await expect(Promise.resolve().then(() => screen.getByLabel('Agree').setInputFiles(
+      invalid<Parameters<Locator['setInputFiles']>[0]>(files),
+    ))).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+    expect(actions).toEqual([]);
+    expect(locate).not.toHaveBeenCalled();
+    expect(steps.all()).toEqual([]);
+  });
+
   it.each([[''], ['  '], [['fixtures/a.txt', '']], [invalid<readonly string[]>(['fixtures/a.txt', 1])]])(
     'setInputFiles refuses %j before any lookup or action',
     async (paths) => {

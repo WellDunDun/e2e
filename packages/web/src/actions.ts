@@ -233,7 +233,7 @@ function radioKind(element: ElementHandle<Element>): Promise<'native' | 'aria' |
  * step shares the operation's deadline, and a cancelled operation sets no
  * files, even when its chooser opens after the cancel.
  */
-async function uploadFiles(target: ActionTarget, paths: readonly string[], operation: ConnectionBudget): Promise<void> {
+async function uploadFiles(target: ActionTarget, files: Parameters<ElementHandle['setInputFiles']>[0], operation: ConnectionBudget): Promise<void> {
   const deadline = new Deadline(operation.timeoutMs);
   const remaining = (): number => Math.max(1, deadline.remaining());
   const element =
@@ -241,7 +241,7 @@ async function uploadFiles(target: ActionTarget, paths: readonly string[], opera
   try {
     if (await isFileInput(element)) {
       operation.signal.throwIfAborted();
-      await element.setInputFiles([...paths], { timeout: remaining() });
+      await element.setInputFiles(files, { timeout: remaining() });
       return;
     }
     const page = await targetPage(target);
@@ -257,7 +257,7 @@ async function uploadFiles(target: ActionTarget, paths: readonly string[], opera
       });
     });
     operation.signal.throwIfAborted();
-    await chooser.setFiles([...paths], { timeout: remaining() });
+    await chooser.setFiles(files, { timeout: remaining() });
   } finally {
     if (target.kind === 'locator') void element.dispose().catch(() => undefined);
   }
@@ -336,9 +336,13 @@ export async function dispatchLocatorAction(
       }
       return;
     }
-    case 'setInputFiles':
-      await uploadFiles(target, action.paths, operation);
+    case 'setInputFiles': {
+      const files = 'paths' in action ? [...action.paths] : action.files.map((file) => ({
+        ...file, buffer: Buffer.from(file.buffer, 'base64'),
+      }));
+      await uploadFiles(target, files, operation);
       return;
+    }
     case 'dragTo': {
       const other = await lookup(action.target);
       operation.signal.throwIfAborted();

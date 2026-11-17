@@ -292,6 +292,11 @@ export type LocatorAction =
   | { readonly kind: 'press'; readonly key: Key }
   | { readonly kind: 'selectOption'; readonly value: SelectOption }
   | { readonly kind: 'setInputFiles'; readonly paths: readonly string[] }
+  | {
+      readonly kind: 'setInputFiles';
+      /** In-memory files; `buffer` is base64 so the action survives JSON-RPC. */
+      readonly files: readonly { readonly name: string; readonly mimeType: string; readonly buffer: string }[];
+    }
   | { readonly kind: 'dragTo'; readonly target: NodeRef }
   | {
       readonly kind: 'swipe';

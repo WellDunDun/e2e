@@ -602,6 +602,16 @@ void (test.fail(false) satisfies void);
 test('gap', { fail: 'known gap' }, async () => {});
 // @ts-expect-error a group cannot expect failure; mark each test
 test.describe('gaps', { fail: true }, () => {});
+void screen.getByLabel('Receipt').setInputFiles({ name: 'receipt.txt', mimeType: 'text/plain', buffer: Buffer.from('receipt') });
+void screen.getByLabel('Receipt').setInputFiles([{ name: 'empty.txt', mimeType: 'text/plain', buffer: Buffer.alloc(0) }]);
+void screen.getByLabel('Receipt').setInputFiles(['fixtures/receipt.txt']);
+void screen.getByLabel('Receipt').setInputFiles([]);
+// @ts-expect-error file payloads require bytes, not an encoded string
+void screen.getByLabel('Receipt').setInputFiles({ name: 'a.txt', mimeType: 'text/plain', buffer: 'data' });
+// @ts-expect-error a payload requires its MIME type
+void screen.getByLabel('Receipt').setInputFiles({ name: 'a.txt', buffer: Buffer.alloc(0) });
+// @ts-expect-error paths and payloads cannot be mixed in one array
+void screen.getByLabel('Receipt').setInputFiles(['a.txt', { name: 'a.txt', mimeType: 'text/plain', buffer: Buffer.alloc(0) }]);
 void screen.getByLabel('Plan').selectOption({ value: 'pro' });
 // @ts-expect-error one of label, value, or index, never two
 void screen.getByLabel('Plan').selectOption({ value: 'pro', index: 1 });
