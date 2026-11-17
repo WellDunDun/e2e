@@ -202,7 +202,9 @@ export async function sendStep(address: StepAddress, action: StepAction): Promis
  * while it claims, so two runs starting at once over a dead run's file cannot
  * both remove it and listen: the one without the lock is refused. A lock a
  * run killed mid-claim left is refused too, with its path to remove. Named pipes
- * go with their process, so a taken one is always live.
+ * go with their process, so a taken one is always live. A process that exits
+ * while the server still listens (a forced exit, a host that ends first)
+ * removes the socket file on its way out; `server.close()` removes it otherwise.
  */
 async function claim(server: net.Server, address: StepAddress): Promise<void> {
   const busy = (cause: unknown): ConfigurationError =>
@@ -236,6 +238,11 @@ async function claim(server: net.Server, address: StepAddress): Promise<void> {
     fs.closeSync(held);
     fs.rmSync(address.lock, { force: true });
   }
+  const removeOnExit = (): void => {
+    if (server.listening) removeSocket(address.socket);
+  };
+  process.once('exit', removeOnExit);
+  server.once('close', () => process.off('exit', removeOnExit));
 }
 
 /**
