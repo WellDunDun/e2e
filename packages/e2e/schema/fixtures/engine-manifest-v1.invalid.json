@@ -4,5 +4,5 @@
   "spiVersion": 1,
   "filePayloads": "true",
   "methods": ["engine/observe", "engine/perform"],
-  "actions": ["setInputFiles", "setInputFilePayloads", "setInputFilePayload"]
+  "actions": ["setInputFiles", "setInputFilePayloads"]
 }

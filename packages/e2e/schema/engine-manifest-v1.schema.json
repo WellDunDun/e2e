@@ -423,6 +423,30 @@
           "actions"
         ]
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "actions": {
+            "contains": {
+              "const": "setInputFilePayloads"
+            }
+          }
+        },
+        "required": [
+          "actions"
+        ]
+      },
+      "then": {
+        "properties": {
+          "filePayloads": {
+            "const": true
+          }
+        },
+        "required": [
+          "filePayloads"
+        ]
+      }
     }
   ]
 }

@@ -383,7 +383,7 @@ member. Three gaps end differently:
 | `perform` + `actions` | `actions` | `observe` | Node actions of the declared kinds, with platform actionability checks. |
 | `locate` | `location` | `observe` | `screen`, `Locator`, `expect(locator)`. |
 | `tapModifiers: true` | - | `perform` | `modifiers` on `tap`, `doubleTap`, and `secondaryTap`. |
-| `filePayloads: true` | - | `perform`, `setInputFilePayloads` action | In-memory file payloads. Without this flag the payload action is removed from the engine’s advertised actions, including when it imports the shared action list. |
+| `filePayloads: true` | - | `perform`, `setInputFilePayloads` action | In-memory file payloads. Without this flag the payload action is removed from the advertised actions; a payload-only declaration fails with `INVALID_CONFIG`. |
 | `performAt` + `pointerActions` | `pointer` | `observe` | One pointer action at a viewport point, with no node behind it. |
 | `keyboard.{type,press,dismiss?}` | `keyboard` | `observe` | Input to whatever holds focus. |
 | `fixtures.<name>` | `<name>` | - | A contributed fixture. |

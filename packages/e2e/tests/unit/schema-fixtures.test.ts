@@ -35,6 +35,16 @@ describe.each(schemas)('%s schema', (name) => {
   });
 
   if (name === 'engine-manifest-v1') {
+    it('requires explicit payload opt-in on an advertised payload action', () => {
+      const manifest = readJson('fixtures', 'engine-manifest-v1.valid.json') as { filePayloads?: boolean };
+      manifest.filePayloads = false;
+      expect(validate(manifest)).toBe(false);
+      delete manifest.filePayloads;
+      expect(validate(manifest)).toBe(false);
+      manifest.filePayloads = true;
+      expect(validate(manifest)).toBe(true);
+    });
+
     it('rejects a method listed twice', () => {
       const manifest = readJson('fixtures', 'engine-manifest-v1.valid.json') as { methods: string[] };
       manifest.methods.push('lifecycle/doctor');

@@ -277,9 +277,10 @@ export function defineEngine<Fixtures extends object = {}>(declared: EngineSpec<
       throw invalid(name, 'declares tapModifiers without perform: modifiers ride the tap actions perform receives');
     }
   }
+  const declaredActions = spec.actions === undefined ? undefined : declaredKinds(name, 'actions', spec.actions, LOCATOR_ACTION_KINDS);
   if (spec.filePayloads !== undefined) {
     if (typeof spec.filePayloads !== 'boolean') throw invalid(name, 'filePayloads must be a boolean');
-    if (spec.filePayloads && !spec.actions?.includes('setInputFilePayloads')) {
+    if (spec.filePayloads && !declaredActions?.includes('setInputFilePayloads')) {
       throw invalid(name, 'declares filePayloads without the setInputFilePayloads action');
     }
   }
@@ -298,9 +299,8 @@ export function defineEngine<Fixtures extends object = {}>(declared: EngineSpec<
     const fn = spec[member];
     if (fn !== undefined) handle[member] = fn.bind(spec);
   }
-  if (spec.actions !== undefined) {
-    const actions = declaredKinds(name, 'actions', spec.actions, LOCATOR_ACTION_KINDS)
-      .filter((kind) => kind !== 'setInputFilePayloads' || spec.filePayloads === true);
+  if (declaredActions !== undefined) {
+    const actions = declaredActions.filter((kind) => kind !== 'setInputFilePayloads' || spec.filePayloads === true);
     if (actions.length === 0) throw invalid(name, 'setInputFilePayloads requires filePayloads: true');
     handle['actions'] = Object.freeze(actions);
   }

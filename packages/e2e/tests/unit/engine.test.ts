@@ -84,6 +84,12 @@ describe('defineEngine', () => {
     expect(() => defineEngine(observingEngine({ actions: ['tap'], perform, filePayloads: 'yes' as never }))).toThrow(/filePayloads must be a boolean/);
   });
 
+  it.each([null, {}, 42, 'setInputFilePayloads'])('reports malformed payload action lists as INVALID_CONFIG: %j', (actions) => {
+    expect(() => defineEngine(observingEngine({
+      actions: actions as never, perform: async () => undefined, filePayloads: true,
+    }))).toThrow(expect.objectContaining({ code: 'INVALID_CONFIG' }));
+  });
+
   it('closes the action list: known kinds, each once, at least one', () => {
     const withActions = (actions: unknown) =>
       defineEngine(observingEngine({ actions: actions as never, perform: async () => undefined }));
