@@ -169,5 +169,5 @@ if (problems.length > 0) {
   );
   process.exitCode = 1;
 } else {
-  process.stdout.write(`docs translations: ${checked} translated pages match their English outline and code\n`);
+  process.stdout.write(`docs translations: ${checked} translated ${checked === 1 ? 'page matches its' : 'pages match their'} English outline and code\n`);
 }
