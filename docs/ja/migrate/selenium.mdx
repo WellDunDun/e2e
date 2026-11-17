@@ -10,7 +10,7 @@ import { SetupPrompt } from '../../snippets/setup-prompt-card.jsx';
 export const migrationPrompt = `このプロジェクトの Selenium テストを、フロー 1 つずつ e2e に移行してください。ドキュメント: \`https://e2e.com/docs/migrate/selenium.md\`
 
 1. 上記の移行ガイドを読んでください。Selenium の設定と WebDriver の呼び出しを e2e に対応付けており、e2e にまだないものも一覧にしています。
-2. e2e のテストは TypeScript です。Selenium のスイートが Java、Python、その他の言語の場合は、新しいテストプロジェクトをどこに置くか私に尋ねてください。たとえば、独自の \`package.json\` を持つ \`e2e/\` フォルダなどです。
+2. e2e のテストは TypeScript です。Selenium のスイートが Java、Python、その他の言語の場合は、新しいテストプロジェクトをどこに置くか私に尋ねてください。たとえば、独自の \`package.json\` を持つ \`e2e/\` フォルダーなどです。
 3. そのプロジェクトに e2e の設定 (\`e2e.config.ts\`、\`.mts\`、\`.js\`、\`.mjs\`) がない場合は、そこで \`npx e2e init --yes\` (または pnpm や bun の同等のコマンド) を実行してください。設定とサンプルテストを書き出し、まだ何もインストールしません。
 4. e2e のスキルを読み (\`npx e2e guide\` で表示され、\`npx e2e guide <topic>\` でトピックを表示します)、以下のすべてのステップでそれに従ってください。
 5. init を実行した場合は、エージェントのステップに使うモデルを私に尋ねてください: ChatGPT、GitHub Copilot、OpenCode Console、SuperGrok のサブスクリプション、API キー、またはローカルモデルです。そのプロバイダーパッケージで設定してください。サインインが必要な場合は、\`npx e2e login\` コマンドを私に伝え、私が確認するまで待ってください。

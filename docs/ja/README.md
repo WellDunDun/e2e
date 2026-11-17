@@ -26,7 +26,8 @@ notice. English stays the source of truth.
    `pnpm docs:check` (`scripts/check-docs-translations.ts`) fails when the
    outline drifts.
 3. Leave code alone: code blocks, inline code, fence titles, URLs, link
-   targets and their `#anchors` stay exactly as on the English page. Links
+   targets and their `#anchors` stay exactly as on the English page.
+   `pnpm docs:check` fails when a code block differs. Links
    stay docs-root relative (`/quickstart#install`); the site points them at
    the Japanese pages.
 4. Snippet imports sit one folder deeper: `./snippets/x.jsx` becomes
@@ -39,6 +40,8 @@ translates it; deleting the translated page falls back to English.
 ## Style
 
 - Polite form (です・ます調), plain technical Japanese.
+- Wrap lines anywhere: the site drops a line break between two Japanese
+  characters, so it never shows as a space.
 - A half-width space between Japanese and Latin words or inline code:
   `e2e の設定`, `` `test()` を呼び出します ``.
 - Keep product, package, and API names in English: e2e, Playwright,

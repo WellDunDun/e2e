@@ -98,7 +98,7 @@ tests: ['tests/**/*.e2e.ts', '!tests/wip/**'], // default: 'tests/**/*.e2e.ts'
 
 - glob では `*`、`?`、およびセグメント全体としての `**` を使えます。`?` は Unicode の
   コードポイント 1 つ（絵文字を含む）にマッチします。
-- `!` で始まるエントリは除外を表します。この例では `tests/wip/` 配下を除く
+- `!` で始まるエントリーは除外を表します。この例では `tests/wip/` 配下を除く
   すべてのテストファイルを選択します。
 - ファイルは、それにマッチする包含 glob があり、かつどの除外にもマッチしないときに
   選択されます。リストの順序は関係ありません。
@@ -112,8 +112,8 @@ tests: ['tests/**/*.e2e.ts', '!tests/wip/**'], // default: 'tests/**/*.e2e.ts'
 | スローされるエラー | 条件 |
 | --- | --- |
 | `INVALID_CONFIG` | リストに除外しか含まれていない。 |
-| `INVALID_GLOB` | ワイルドカードを含まないエントリがディレクトリを指している（`'!tests/wip'`）。glob はファイルを指定するものです。エラーには書くべき glob（`'!tests/wip/**'`）が示されます。 |
-| `NO_TESTS` | `e2e run` に渡したファイルが除外によって外された。エラーにはそのエントリが示されます。 |
+| `INVALID_GLOB` | ワイルドカードを含まないエントリーがディレクトリを指している（`'!tests/wip'`）。glob はファイルを指定するものです。エラーには書くべき glob（`'!tests/wip/**'`）が示されます。 |
+| `NO_TESTS` | `e2e run` に渡したファイルが除外によって外された。エラーにはそのエントリーが示されます。 |
 
 #### `timeout`
 
@@ -445,15 +445,15 @@ linkBase: 'shopapp://', // app.open('/orders/42') opens shopapp://orders/42
 
 #### `identity`
 
-リプレイキャッシュとセッションのエントリのキーとなる、安定したアイデンティティです。
+リプレイキャッシュとセッションのエントリーのキーとなる、安定したアイデンティティです。
 
 ```ts
 identity: 'checkout-web', // default: the URL's origin and base path, else bundleId, else appPath
 ```
 
-プレビュー URL やバージョン付きのビルドパスをまたいでエントリを再利用するには、
+プレビュー URL やバージョン付きのビルドパスをまたいでエントリーを再利用するには、
 安定した値を設定してください。[空きポート](#free-ports)を使う場合、デフォルト値は
-宣言された `:0` から導出されるため、ポートが変わってもキャッシュやセッションのエントリは
+宣言された `:0` から導出されるため、ポートが変わってもキャッシュやセッションのエントリーは
 変わりません。
 
 <Note>
@@ -544,7 +544,7 @@ command: {
   マッチする変数、および `command.env` だけです。アプリに必要なものは明示的に渡してください。
 - `inheritEnv` には、正確な名前か、`*` で終わるプレフィックス（`'STRIPE_*'`）を指定します。
   変数は設定されている場合にのみコピーされます。継承された値よりも `env` が優先されます。
-- `args` の各エントリと `env` の各値は文字列です。`undefined` の `env` 値は
+- `args` の各エントリーと `env` の各値は文字列です。`undefined` の `env` 値は
   取り除かれます。
 - `startupTimeout` は [`readyUrl`](#readyurl) のプローブにかけられる時間です。
 - `shutdownTimeout` は強制終了までの猶予期間です。
@@ -574,7 +574,7 @@ command: {
 | スローされるエラー | 条件 |
 | --- | --- |
 | `INVALID_CONFIG` | `inheritEnv` に単独の `'*'` がある。 |
-| `INVALID_CONFIG` | `args` のエントリまたは `env` の値が文字列ではない（数値や `secrets.get()` ハンドルを含む）。 |
+| `INVALID_CONFIG` | `args` のエントリーまたは `env` の値が文字列ではない（数値や `secrets.get()` ハンドルを含む）。 |
 | `INVALID_CONFIG` | `url` がポート 0 を要求するアプリに `reuseExisting` を指定した。すでに動いているプロセスは、実行が割り当てるポートでサービスを提供できません。 |
 | `APP_URL_REQUIRED` | 設定の読み込み時に、`app.url` も `app.readyUrl` もない `app.command` がある。 |
 | `APP_ALREADY_RUNNING` | `reuseExisting` なしで、`readyUrl` がすでに応答している。 |
@@ -675,7 +675,7 @@ output: 'test-results/e2e', // default: '.e2e'
   クリアすることはありません。
 - リプレイキャッシュは `output` の値にかかわらず [`cache.dir`](#dir) に置かれるため、
   結果を移動しても記録が移動することはありません。
-- `e2e init` は、デフォルトの `.e2e/` のパスに対してのみ `.gitignore` のエントリを書き込みます。
+- `e2e init` は、デフォルトの `.e2e/` のパスに対してのみ `.gitignore` のエントリーを書き込みます。
   `output` を別の場所に設定した場合は、そのディレクトリを自分で `.gitignore` に追加してください。
 
 実行は output ディレクトリの一部をクリアし、管理します。そのため、ディレクトリが
@@ -943,9 +943,9 @@ export default {
   使います。`{ agent: ['buyer', 'admin'] }` を指定したテストは、エージェントごとに 1 回ずつ
   実行されます。
 - `default` は、設定でエージェントを 1 つも宣言していなくても存在しますが、モデルを持ちません。
-- 各エントリは組み込みのデフォルト値から始まります。エージェント同士で継承は行われず、
-  上の例の `ux` は `default` から `context` を受け継ぎません。エントリで省略したキーは
-  デフォルト値になり、他のエントリの値になることはありません。
+- 各エントリーは組み込みのデフォルト値から始まります。エージェント同士で継承は行われず、
+  上の例の `ux` は `default` から `context` を受け継ぎません。エントリーで省略したキーは
+  デフォルト値になり、他のエントリーの値になることはありません。
 - 各ワーカーは、この設定モジュールから独自のエージェントを構築します。
 - 名前には ASCII の英字、数字、`_`、`-`、`.` を使えますが、ドットだけの名前は使えません。
   名前はアーティファクトのパスのセグメントになるためです。
@@ -1043,7 +1043,7 @@ tools: { lookupOrder },
 house: { executor: houseBrain, model: gateway('openai/gpt-6-luna-fast'), maxModelCalls: 10 },
 ```
 
-- `model`、`judge`、`context`、および各種の上限は引き続き適用されます。ジャッジには
+- `model`、`judge`、`context`、および各種の上限は引き続き適用されます。判定には
   モデルが必要です。これと並べて [`system`](#system) や [`tools`](#tools) を指定すると
   `INVALID_CONFIG` になります。
 - `maxModelCalls` は 1 ステップのモデルのターン数を制限します。
@@ -1121,9 +1121,9 @@ OpenAI と Azure OpenAI の Responses の呼び出しでは、ここで設定し
 
 | 書いたもの | 現在 |
 | --- | --- |
-| エントリとしての単独の `StepExecutor` | `{ executor }` |
+| エントリーとしての単独の `StepExecutor` | `{ executor }` |
 | `timeout` | `judgmentTimeout` |
-| `maxTurns`（エントリまたは `createToolLoopExecutor` 上） | `maxModelCalls` |
+| `maxTurns`（エントリーまたは `createToolLoopExecutor` 上） | `maxModelCalls` |
 | トップレベルの `limits.maxModelTokensPerCall` | 各エージェントの `maxInputTokens` |
 | トップレベルの `limits.maxAgentContextBytes`、`maxLedgerBytes`、`maxEventsPerStep` | 削除されました。ランナーがそれぞれ 16384 バイト、8192 バイト、1000 イベントに固定します |
 
@@ -1156,7 +1156,7 @@ export default {
 
 ### credentials
 
-名前付きのアカウントです。各エントリは、ユーザー名と、モデルには決して見せない
+名前付きのアカウントです。各エントリーは、ユーザー名と、モデルには決して見せない
 パスワードから成ります。
 
 ```ts
@@ -1171,7 +1171,7 @@ credentials: {
 | [`password`](#password) | `string \| SecretProvider` |
 
 - 認証情報とシークレットは別々の名前空間です。`secrets.get(name)` は `secrets` の
-  エントリのみを返します。認証情報のパスワードには
+  エントリーのみを返します。認証情報のパスワードには
   `credentials.user(name).password` としてのみアクセスできます。
 - エージェント、リプレイキャッシュ、レポートは、そのパスワードを `<name>.password` という
   名前のシークレット（`<secret:admin.password>`）として扱います。そのため
@@ -1179,7 +1179,7 @@ credentials: {
 
 | スローされるエラー | 条件 |
 | --- | --- |
-| `INVALID_CONFIG` | `admin` の認証情報と並んで、名前がちょうど `admin.password` の `secrets` エントリがある。 |
+| `INVALID_CONFIG` | `admin` の認証情報と並んで、名前がちょうど `admin.password` の `secrets` エントリーがある。 |
 | `INVALID_CONFIG` | `svc-a` と `svc_a` のように、名前が同じ `E2E_USER_<NAME>_*` の上書きに対応する 2 つの認証情報がある（[環境変数](/reference/environment) を参照）。 |
 
 [認証](/authentication) を参照してください。宣言は
@@ -1193,7 +1193,7 @@ credentials: {
 username: 'admin@example.com',
 ```
 
-`E2E_USER_<NAME>_USERNAME` が設定値より優先されます。どちらもない場合、そのエントリは
+`E2E_USER_<NAME>_USERNAME` が設定値より優先されます。どちらもない場合、そのエントリーは
 `INVALID_CONFIG` になります。
 
 #### `password`
@@ -1213,7 +1213,7 @@ password: () => readFile('.secrets/admin', 'utf8'),
 
 #### `credentials.user()`
 
-テスト内で、設定されたエントリを `Credential` に解決します。
+テスト内で、設定されたエントリーを `Credential` に解決します。
 
 ```ts
 const admin = credentials.user('admin');
@@ -1234,7 +1234,7 @@ secrets: {
 },
 ```
 
-| エントリ | 例 | 検査のタイミング |
+| エントリー | 例 | 検査のタイミング |
 | --- | --- | --- |
 | 静的な値 | `'sk_test_51Hx…'` | 設定の読み込み時 |
 | プロバイダー | `() => readFile('.secrets/api-key', 'utf8')` | 許可された入力のたび |
@@ -1242,12 +1242,12 @@ secrets: {
 - プロバイダーは、許可された入力のたびに実行されます（ボールトの参照や、その都度計算される
   TOTP など）。設定のダイジェストには名前だけが記録されます。
 - `E2E_SECRET_<NAME>` による上書きはその両方より優先されます。
-- すべてのエントリは、6 文字（コードポイント）以上の文字列か関数に解決される必要があり、
+- すべてのエントリーは、6 文字（コードポイント）以上の文字列か関数に解決される必要があり、
   それ以外は `INVALID_CONFIG` になります。プロバイダーの値にも入力時に同じ最小長が
   適用され、満たさない場合は `SECRET_UNAVAILABLE` になります。
 - この最小長はマスキングのために存在します。値が出現する箇所はすべて `<secret:name>` に
   置き換えられるため、短い値ではレポートや出力の通常のテキストまで巻き込まれてしまいます。
-- `api-key` と `api_key` のように、名前が同じ変数に対応する 2 つのエントリは
+- `api-key` と `api_key` のように、名前が同じ変数に対応する 2 つのエントリーは
   `INVALID_CONFIG` になります。
 
 宣言は [`SecretConfig`](#secretconfig) にあります。
@@ -1255,7 +1255,7 @@ secrets: {
 
 #### `secrets.get()`
 
-設定されたエントリに対応する不透明な `Secret` を返します。
+設定されたエントリーに対応する不透明な `Secret` を返します。
 
 ```ts
 await screen.getByLabel('API key').fill(secrets.get('apiKey'));
@@ -1276,7 +1276,7 @@ await screen.getByLabel('API key').fill(secrets.get('apiKey'));
 engine: web({ basicAuth: { username, password: secrets.get('previewPassword') } }),
 ```
 
-- エンジンがこれを宣言します。その名前の `secrets` エントリがない場合、設定の読み込みは
+- エンジンがこれを宣言します。その名前の `secrets` エントリーがない場合、設定の読み込みは
   `INVALID_CONFIG` で失敗します。認証情報のパスワードはこれに該当しません。エンジン
   オプションに必要な値は `secrets` に宣言してください。
 - エンジンは各試行の開始時に値を解決するため、プロバイダーは毎回再実行されます。その後、
@@ -1285,7 +1285,7 @@ engine: web({ basicAuth: { username, password: secrets.get('previewPassword') } 
 - ダイジェストには名前だけが記録されます。
 - 参照は値そのものではありません。文字列に変換すると（テンプレートリテラル、
   `String()`、`+`、`JSON.stringify`）、`INVALID_CONFIG` がスローされます。文字列と
-  プレースホルダーしか受け付けない `app.command` の `args` エントリや `env` 値に参照を
+  プレースホルダーしか受け付けない `app.command` の `args` エントリーや `env` 値に参照を
   入れた場合も同様です。アプリの API キーのように文字列として必要な値は、
   自分で `process.env` から読み取ってください。
 
@@ -1319,8 +1319,8 @@ cache: 'read-write', // default: 'read-write' locally, 'read-only' in CI
 
 | モード | 動作 |
 | --- | --- |
-| `'read-write'` | エントリをリプレイし、新しいエントリを記録します。 |
-| `'read-only'` | 既存のエントリをリプレイし、何も書き込みません。 |
+| `'read-write'` | エントリーをリプレイし、新しいエントリーを記録します。 |
+| `'read-only'` | 既存のエントリーをリプレイし、何も書き込みません。 |
 | `'off'` | 両方を無効にします。 |
 
 - 明示的に指定したモードはデフォルトより優先されます。CI が独自のキャッシュサービスから
@@ -1329,7 +1329,7 @@ cache: 'read-write', // default: 'read-write' locally, 'read-only' in CI
 
 #### `store`
 
-ファイルストアを置き換えるカスタムのエントリストアです。
+ファイルストアを置き換えるカスタムのエントリーストアです。
 
 ```ts
 cache: { store: createStore(cacheUrl) },
@@ -1369,7 +1369,7 @@ cache: { strict: true }, // default: false
 
 #### リプレイキャッシュをコミットする
 
-`e2e init` は `.e2e/cache/` を `.gitignore` に追加するため、エントリのコミットは
+`e2e init` は `.e2e/cache/` を `.gitignore` に追加するため、エントリーのコミットは
 オプトインです。CI やチームメンバーとリプレイを共有するには、その行を削除してください。
 `cache: 'read-write'` が設定されていない限り、CI は `read-only` のままです。
 [キャッシュ](/cache#commit-the-replay-cache) を参照してください。

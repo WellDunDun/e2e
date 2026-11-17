@@ -125,7 +125,7 @@ Playwright バージョン用のブラウザを、そのシステムライブラ
 このステップはジョブが成功した後に保存します。失敗した実行の後にも保存するには、
 実行の前に `actions/cache/restore` を、実行の後に `if: ${{ !cancelled() }}` を付けた
 `actions/cache/save` を使います。履歴が役立つのは [`workers`](/reference/config#workers)
-が 2 以上の場合だけで、上のワークフローは 1 つで実行しています。
+が 2 以上の場合だけで、上のワークフローはワーカー 1 つで実行しています。
 
 ## iOS と Android
 

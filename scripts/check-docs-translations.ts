@@ -10,7 +10,10 @@
  * section in either language. That holds only while both pages have the same
  * outline, so this script compares, outside code fences: the heading levels
  * (h1 to h4, the ones with ids) in order, the `<Tab>` and `<Accordion>`
- * elements in order, and the explicit `id="..."` values.
+ * elements in order with the `id` each carries, and the explicit `id="..."`
+ * values. It also compares the code blocks, in order: a translation shows
+ * the English page's code, which `check-docs-examples.ts` checks on the
+ * English page only.
  *
  * It also fails on a translation with no English page, a translation without
  * a `title`, and a `docs/<language>/navigation.json` that does not label every
@@ -31,7 +34,7 @@ const DOCS = join(ROOT, 'docs');
 const LANGUAGES = ['ja'];
 const FENCE = /^ {0,3}(`{3,}|~{3,})/;
 const HEADING = /^ {0,3}(#{1,4})\s+\S/;
-const ELEMENT = /<(Tab|Accordion)\b/g;
+const ELEMENT = /<(Tab|Accordion)\b([^>]*)>/g;
 const ID = /\bid="([^"]*)"/g;
 const FRONTMATTER = /^---\n([\s\S]*?)\n---\n/;
 
@@ -54,34 +57,46 @@ function read(path: string): string {
   return readFileSync(path, 'utf8').replaceAll('\r\n', '\n');
 }
 
-/** The page's lines outside code fences; a fence closes only on the same character at least as long. */
-function prose(source: string): string[] {
-  const lines: string[] = [];
-  let open: string | undefined;
+/**
+ * The page's lines outside code fences, and its code blocks with their fence
+ * lines; a fence closes only on the same character at least as long.
+ */
+function split(source: string): { prose: string[]; code: string[] } {
+  const prose: string[] = [];
+  const code: string[] = [];
+  let open: { fence: string; lines: string[] } | undefined;
   for (const line of source.split('\n')) {
     const fence = FENCE.exec(line)?.[1];
     if (open) {
-      if (fence && fence[0] === open[0] && fence.length >= open.length && line.trim() === fence) open = undefined;
+      open.lines.push(line);
+      if (fence && fence[0] === open.fence[0] && fence.length >= open.fence.length && line.trim() === fence) {
+        code.push(open.lines.join('\n'));
+        open = undefined;
+      }
     } else if (fence) {
-      open = fence;
+      open = { fence, lines: [line] };
     } else {
-      lines.push(line);
+      prose.push(line);
     }
   }
-  return lines;
+  return { prose, code };
 }
 
-/** What gives a page its anchors, in order: heading levels, tab and accordion elements, explicit ids. */
-function outline(source: string): { headings: string[]; elements: string[]; ids: string[] } {
-  const lines = prose(source.replace(FRONTMATTER, ''));
+/** What gives a page its anchors, in order (heading levels, tabs and accordions, explicit ids), and its code. */
+function outline(source: string): { headings: string[]; elements: string[]; ids: string[]; code: string[] } {
+  const { prose: lines, code } = split(source.replace(FRONTMATTER, ''));
   const text = lines.join('\n');
   return {
     headings: lines.flatMap((line) => {
       const heading = HEADING.exec(line);
       return heading ? [`h${heading[1]!.length}`] : [];
     }),
-    elements: [...text.matchAll(ELEMENT)].map((match) => match[1]!),
+    elements: [...text.matchAll(ELEMENT)].map((match) => {
+      const id = /\bid="([^"]*)"/.exec(match[2]!)?.[1];
+      return id === undefined ? match[1]! : `${match[1]!}#${id}`;
+    }),
     ids: [...text.matchAll(ID)].map((match) => match[1]!),
+    code,
   };
 }
 
@@ -119,6 +134,11 @@ for (const language of LANGUAGES) {
     ]) {
       if (problem) problems.push(`docs/${file}: ${problem}`);
     }
+    const drifted = theirs.code.findIndex((block, i) => block !== ours.code[i]);
+    if (drifted !== -1 || theirs.code.length !== ours.code.length) {
+      const at = drifted === -1 ? theirs.code.length : drifted;
+      problems.push(`docs/${file}: code block #${at + 1} differs from the English page's (${theirs.code.length} vs ${ours.code.length} in all)`);
+    }
     checked++;
   }
 
@@ -145,9 +165,9 @@ for (const language of LANGUAGES) {
 
 if (problems.length > 0) {
   process.stderr.write(
-    `${problems.join('\n')}\n\nA translation keeps the English page's outline: translate the text, never add, drop, or reorder a heading, tab, accordion, or id. See authoring-docs, "Translations".\n`,
+    `${problems.join('\n')}\n\nA translation keeps the English page's outline and code: translate the text, never add, drop, or reorder a heading, tab, accordion, or id, and copy code blocks as they are. See authoring-docs, "Translations".\n`,
   );
   process.exitCode = 1;
 } else {
-  process.stdout.write(`docs translations: ${checked} translated pages match their English outline\n`);
+  process.stdout.write(`docs translations: ${checked} translated pages match their English outline and code\n`);
 }

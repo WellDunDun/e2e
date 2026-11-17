@@ -133,7 +133,10 @@ const LANGUAGES = new Set(['ja']);
  */
 function englishPage(page: string): string {
   const [language, ...rest] = relative(DOCS, page).split(sep);
-  return language !== undefined && LANGUAGES.has(language) ? join(DOCS, ...rest) : page;
+  if (language === undefined || !LANGUAGES.has(language)) return page;
+  // A translation whose English page is gone: check-docs-translations.ts reports it.
+  const english = join(DOCS, ...rest);
+  return existsSync(english) ? english : page;
 }
 
 const all = pages(DOCS);

@@ -131,7 +131,7 @@ export default {
 ```
 
 値が秘匿化されるのは、最初に入力されたとき以降だけです。テストが入力する前にアプリがその値を
-表示する可能性がある場合は、文字列を使ってください。`secrets` のエントリにも同じことが当てはまります。
+表示する可能性がある場合は、文字列を使ってください。`secrets` のエントリーにも同じことが当てはまります。
 
 </Accordion>
 
@@ -191,10 +191,10 @@ await agent.act('Connect Stripe with the given key', {
 });
 ```
 
-`secrets` のエントリは、編集可能な任意の入力に入力できます。設定されていない名前は
+`secrets` のエントリーは、編集可能な任意の入力に入力できます。設定されていない名前は
 `SECRET_UNAVAILABLE` を投げます。通常の入力はマスクされないため、入力に値が入っている間は
 スクリーンショット（モデルに渡るものを含む）にその値が写ります。`secrets.get()` が
-返すのは `secrets` のエントリだけなので、
+返すのは `secrets` のエントリーだけなので、
 `credentials.admin` と `secrets.admin` は両方存在できます。
 
 `e2e.config.ts` では、`secrets.get()` を使って、[`basicAuth`](/web#protected-previews) のような
@@ -206,14 +206,14 @@ await agent.act('Connect Stripe with the given key', {
 
 環境変数は、1 回の実行に限って設定の値を置き換えます。
 
-| エントリ | 変数 |
+| エントリー | 変数 |
 | --- | --- |
 | `credentials.admin.username` | `E2E_USER_ADMIN_USERNAME` |
 | `credentials.admin.password` | `E2E_USER_ADMIN_PASSWORD` |
 | `secrets['stripe-key']` | `E2E_SECRET_STRIPE_KEY` |
 
-変数名にはエントリ名を大文字にしたものが入り、`A-Z` と `0-9` 以外の文字はすべて `_` になります。
-`stripe-key` と `stripe_key` のように 2 つのエントリが 1 つの変数に対応する場合、設定の読み込みは
+変数名にはエントリー名を大文字にしたものが入り、`A-Z` と `0-9` 以外の文字はすべて `_` になります。
+`stripe-key` と `stripe_key` のように 2 つのエントリーが 1 つの変数に対応する場合、設定の読み込みは
 `INVALID_CONFIG` で失敗します。
 
 <CodeGroup>
@@ -278,7 +278,7 @@ for (const persona of ['buyer', 'admin'] as const) {
   </Tab>
 </Tabs>
 
-それぞれの名前は、`agents` のエントリ、`credentials` のエントリ、保存されたセッションを指します。
+それぞれの名前は、`agents` のエントリー、`credentials` のエントリー、保存されたセッションを指します。
 ペルソナごとに別のセッションが必要ない場合は、代わりに
 [1 つのフローを複数のエージェントとして実行](/agents#one-flow-several-personas)します。
 
