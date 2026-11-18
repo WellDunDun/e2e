@@ -200,6 +200,12 @@ export class LocatorEngine {
    */
   private checkAction(action: LocatorAction): void {
     if (!this.session.actions.has(action.kind)) {
+      if (action.kind === 'setInputFilePayloads') {
+        throw new ConfigurationError(
+          'UNSUPPORTED_CAPABILITY',
+          'in-memory files for setInputFiles are not available on this target; update its engine or pass a file path',
+        );
+      }
       throw new ConfigurationError(
         'UNSUPPORTED_CAPABILITY',
         `the "${action.kind}" action is not available on this target: its engine declares ${

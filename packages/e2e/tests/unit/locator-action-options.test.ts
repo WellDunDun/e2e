@@ -252,7 +252,10 @@ describe('locator action options', () => {
     const { screen } = screenOver({ locate, perform, actions, observe: () => snapshot(NODES), timeoutMs: 1_000 });
     await expect(screen.getByLabel('Agree').setInputFiles({
       name: 'a.txt', mimeType: 'text/plain', buffer: Buffer.from('data'),
-    })).rejects.toMatchObject({ code: 'UNSUPPORTED_CAPABILITY' });
+    })).rejects.toMatchObject({
+      code: 'UNSUPPORTED_CAPABILITY',
+      message: 'in-memory files for setInputFiles are not available on this target; update its engine or pass a file path',
+    });
     expect(locate).not.toHaveBeenCalled();
     expect(perform).not.toHaveBeenCalled();
     await screen.getByLabel('Agree').setInputFiles('a.txt');
