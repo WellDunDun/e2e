@@ -7,7 +7,6 @@
  */
 
 import type { BrowserContext, Page } from 'playwright-core';
-import * as coreEngine from '@e2e-dev/core/engine';
 import {
   ConfigurationError,
   defineEngine,
@@ -123,11 +122,8 @@ export function web(options: WebOptions = {}): EngineHandle<WebFixtures> {
     readStyle: (ref, properties, operation) => surface.readStyle(ref, properties, operation),
     locate: (expression, operation) => surface.locate(expression, operation),
     perform: (ref, action, operation) => surface.perform(ref, action, operation),
-    // A browser honors every action kind of the contract; `actions.ts` dispatches each.
-    // Older core versions reject action kinds they do not know.
-    actions: coreEngine.KNOWN_LOCATOR_ACTION_KINDS?.includes('blur')
-      ? [...LOCATOR_ACTION_KINDS, 'blur']
-      : LOCATOR_ACTION_KINDS,
+    // A browser honors the SPI v1 actions and blur; `actions.ts` dispatches each.
+    actions: [...LOCATOR_ACTION_KINDS, 'blur'],
     // Playwright holds each modifier for the click.
     tapModifiers: true,
     // A page takes every pointer action of the contract at a bare point too.

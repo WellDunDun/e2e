@@ -323,6 +323,7 @@ export async function dispatchLocatorAction(
         const attached = await target.element.evaluate((node) => {
           const view = node.ownerDocument.defaultView;
           if (!node.isConnected || view === null) return false;
+          // Bypass app overrides of the instance method, as Playwright does in its utility world.
           if (node instanceof view.HTMLElement) view.HTMLElement.prototype.blur.call(node);
           else if (node instanceof view.SVGElement) view.SVGElement.prototype.blur.call(node);
           return true;

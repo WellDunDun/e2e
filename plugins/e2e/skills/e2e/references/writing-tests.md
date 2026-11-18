@@ -276,10 +276,10 @@ Each action resolves one node, waits up to `config.actionTimeout` (30 s, or
 `fill(value | Secret)`, `pressSequentially(text, { delay? })`, `clear()`,
 `press(key)`, `check()`, `uncheck()`,
 `selectOption(label | { label } | { value } | { index })` (one option; an
-array is `INVALID_ARGUMENT`), `focus()`, `blur()` (web only), `hover()`, `setInputFiles(paths)`
+array is `INVALID_ARGUMENT`), `focus()`, `blur()`, `hover()`, `setInputFiles(paths)`
 (relative to the project root; `[]` clears), `dragTo(locator)`, `scrollIntoView()`,
 `swipe({ direction, momentum? })`. Web only, `UNSUPPORTED_CAPABILITY` on a
-device: `secondaryTap`, `selectOption`, `setInputFiles`, `scrollIntoView`,
+device: `blur`, `secondaryTap`, `selectOption`, `setInputFiles`, `scrollIntoView`,
 and `modifiers`.
 
 `fill` sets the value with no key events; when the app reacts to keystrokes

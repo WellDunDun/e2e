@@ -1170,3 +1170,5 @@ declare const blurTarget: Locator;
 void (blurTarget.blur satisfies (options?: ActionOptions) => Promise<void>);
 // @ts-expect-error blur accepts action options, not a selector
 void blurTarget.blur('input');
+
+void (true satisfies (Exclude<import('e2e/engine').LocatorActionKind, (typeof import('e2e/engine').KNOWN_LOCATOR_ACTION_KINDS)[number]> extends never ? true : false));
