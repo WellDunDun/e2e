@@ -246,7 +246,7 @@ describe('locator action options', () => {
     expect(JSON.stringify(steps.all())).not.toContain('AID/');
   });
 
-  it.each([{ actions: ['setInputFiles'] as const }, { actions: LOCATOR_ACTION_KINDS }])('rejects payload uploads without opt-in even when an older engine imports the shared list', async ({ actions }) => {
+  it.each([{ actions: ['setInputFiles'] as const }, { actions: LOCATOR_ACTION_KINDS }])('rejects payload uploads when the engine declares no payload action', async ({ actions }) => {
     const locate = vi.fn(async () => [BOX]);
     const perform = vi.fn(async () => undefined);
     const { screen } = screenOver({ locate, perform, actions, observe: () => snapshot(NODES), timeoutMs: 1_000 });

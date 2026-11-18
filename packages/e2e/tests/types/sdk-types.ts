@@ -1179,3 +1179,5 @@ createCoreAgent({}, {});
 declare const coreExecutor: CoreStepExecutor;
 declare const coreStore: CoreCacheStore;
 void createCoreAgent(gadgetSession, { executor: coreExecutor, cache: { store: coreStore } });
+
+void (true satisfies (Exclude<import('e2e/engine').LocatorActionKind, (typeof import('e2e/engine').KNOWN_LOCATOR_ACTION_KINDS)[number]> extends never ? true : false));

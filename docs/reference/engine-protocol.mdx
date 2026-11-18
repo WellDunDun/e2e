@@ -210,8 +210,6 @@ export interface EngineManifest {
   /** Required with `engine/performAt`. */
   readonly pointerActions?: readonly PointerActionKind[];
   readonly tapModifiers?: boolean;
-  /** Requires engine/perform and setInputFilePayloads in actions; that action also requires this flag. */
-  readonly filePayloads?: boolean;
 }
 ```
 

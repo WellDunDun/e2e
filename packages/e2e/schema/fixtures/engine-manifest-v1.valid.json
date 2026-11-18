@@ -4,7 +4,6 @@
   "spiVersion": 1,
   "platform": "android",
   "workers": 1,
-  "filePayloads": true,
   "methods": [
     "engine/observe",
     "engine/readStyle",

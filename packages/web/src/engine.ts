@@ -122,9 +122,8 @@ export function web(options: WebOptions = {}): EngineHandle<WebFixtures> {
     readStyle: (ref, properties, operation) => surface.readStyle(ref, properties, operation),
     locate: (expression, operation) => surface.locate(expression, operation),
     perform: (ref, action, operation) => surface.perform(ref, action, operation),
-    // A browser honors every action kind of the contract; `actions.ts` dispatches each.
-    actions: LOCATOR_ACTION_KINDS,
-    ...(LOCATOR_ACTION_KINDS.includes('setInputFilePayloads') ? { filePayloads: true } : {}),
+    // A browser honors the SPI v1 actions and in-memory uploads; `actions.ts` dispatches each.
+    actions: [...LOCATOR_ACTION_KINDS, 'setInputFilePayloads'],
     // Playwright holds each modifier for the click.
     tapModifiers: true,
     // A page takes every pointer action of the contract at a bare point too.

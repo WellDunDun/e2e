@@ -8,7 +8,7 @@
 
 import {
   defineEngine,
-  LOCATOR_ACTION_KINDS,
+  KNOWN_LOCATOR_ACTION_KINDS,
   type EngineKeyboard,
   type EngineSnapshot,
   type LocatorAction,
@@ -41,7 +41,6 @@ export interface ScreenOverOptions {
   /** Whether the engine declares `tapModifiers`; default not. */
   readonly tapModifiers?: boolean;
   /** Whether to opt in to in-memory uploads; defaults true with the default action list. */
-  readonly filePayloads?: boolean;
   /** Action and assertion timeout in milliseconds. */
   readonly timeoutMs: number;
 }
@@ -58,8 +57,7 @@ export function screenOver(options: ScreenOverOptions): { screen: Screen; steps:
     ...(perform === undefined
       ? {}
       : {
-          actions: options.actions ?? LOCATOR_ACTION_KINDS,
-          filePayloads: options.filePayloads ?? options.actions === undefined,
+          actions: options.actions ?? KNOWN_LOCATOR_ACTION_KINDS,
           perform: async (ref: NodeRef, action: LocatorAction, operation: OperationContext) => {
             await perform(ref, action, operation);
           },

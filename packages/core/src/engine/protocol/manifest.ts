@@ -28,7 +28,6 @@ export function describeEngine(engine: EngineHandle): EngineManifest {
     actions: engine.actions,
     pointerActions: engine.pointerActions,
     tapModifiers: engine.tapModifiers === true ? true : undefined,
-    filePayloads: engine.filePayloads === true ? true : undefined,
   });
 }
 
@@ -75,6 +74,5 @@ function comparable(manifest: EngineManifest) {
     actions: sorted(manifest.actions),
     pointerActions: sorted(manifest.pointerActions),
     tapModifiers: manifest.tapModifiers === true,
-    filePayloads: manifest.filePayloads === true,
   };
 }

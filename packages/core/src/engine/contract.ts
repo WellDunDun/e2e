@@ -307,7 +307,7 @@ export type LocatorAction =
 /** Every action kind; what an engine declares in `actions`. */
 export type LocatorActionKind = LocatorAction['kind'];
 
-/** The closed list of action kinds, in contract order; the type is derived from it. */
+/** The locator action kinds of SPI v1. List newer kinds explicitly. */
 export const LOCATOR_ACTION_KINDS = [
   'tap',
   'doubleTap',
@@ -323,10 +323,12 @@ export const LOCATOR_ACTION_KINDS = [
   'scrollIntoView',
   'selectOption',
   'setInputFiles',
-  'setInputFilePayloads',
   'dragTo',
   'swipe',
 ] as const satisfies readonly LocatorActionKind[];
+
+/** Every action kind understood by this version of core. */
+export const KNOWN_LOCATOR_ACTION_KINDS = [...LOCATOR_ACTION_KINDS, 'setInputFilePayloads'] as const satisfies readonly LocatorActionKind[];
 
 /**
  * One action `performAt` carries out at a viewport point, with no node

@@ -103,10 +103,9 @@ rules:
 | `observe`, `readStyle`, `locate`, `perform`, `performAt`, `prepare`, `finish`, `doctor`, `init`, `startAttempt`, `settleAttempt`, `endAttempt`, `dispose`, `validateApp` | Not a function. |
 | any other top-level key | On an object literal, `app` included: declare the app on the target and check it in `validateApp`. A class instance's own fields are not checked. |
 | `readStyle`, `perform`, `locate`, `performAt`, `keyboard` | Declared without `observe`. |
-| `perform`, `actions` | One without the other. An `actions` list that is empty, repeats a kind, or names one outside `LOCATOR_ACTION_KINDS`. |
+| `perform`, `actions` | One without the other. An `actions` list that is empty, repeats a kind, or names one outside `KNOWN_LOCATOR_ACTION_KINDS`. |
 | `performAt`, `pointerActions` | One without the other. A `pointerActions` list that is empty, repeats a kind, or names one outside `POINTER_ACTION_KINDS`. |
 | `tapModifiers` | Not a boolean, or `true` without `perform`. |
-| `filePayloads` | Not a boolean, or `true` without the `setInputFilePayloads` action. |
 | `keyboard`, `state`, `artifacts`, `session` | An unknown key or a non-function member. `keyboard` without `type` and `press`; `state` without both `capture` and `restore`; `artifacts` without `screenshot`; `startVideo` without `stopVideo`, or the reverse. |
 | `secrets` | Not an array of `secrets.get()` handles. |
 | `fixtures` | Not an object, a fixture that is not a factory function, or a fixture name that is not a lower-camel identifier or shadows `agent`, `app`, `screen`, `platform`, or `session`. |
@@ -136,7 +135,6 @@ The body of one target. Every member but `name`, `version`, and
 | [`locate`](#capabilities) | method |
 | [`performAt`, `pointerActions`](#pointer-actions) | method, kinds |
 | [`tapModifiers`](#capabilities) | `boolean` |
-| [`filePayloads`](#capabilities) | `boolean` |
 | [`keyboard`](#keyboard) | `EngineKeyboard` |
 | [`fixtures`](#contributed-fixtures) | factories |
 | [`state`](#state) | `EngineStateCapability` |
@@ -238,7 +236,6 @@ export interface Engine {
    */
   readonly tapModifiers?: boolean;
   /** Opts in to in-memory file payloads, in addition to declaring the action. */
-  readonly filePayloads?: boolean;
   /** capability: keyboard - requires observation. Input to whatever holds focus; see `EngineKeyboard`. */
   readonly keyboard?: EngineKeyboard;
   /**
@@ -383,7 +380,6 @@ member. Three gaps end differently:
 | `perform` + `actions` | `actions` | `observe` | Node actions of the declared kinds, with platform actionability checks. |
 | `locate` | `location` | `observe` | `screen`, `Locator`, `expect(locator)`. |
 | `tapModifiers: true` | - | `perform` | `modifiers` on `tap`, `doubleTap`, and `secondaryTap`. |
-| `filePayloads: true` | - | `perform`, `setInputFilePayloads` action | In-memory file payloads. Without this flag the payload action is removed from the advertised actions; a payload-only declaration fails with `INVALID_CONFIG`. |
 | `performAt` + `pointerActions` | `pointer` | `observe` | One pointer action at a viewport point, with no node behind it. |
 | `keyboard.{type,press,dismiss?}` | `keyboard` | `observe` | Input to whatever holds focus. |
 | `fixtures.<name>` | `<name>` | - | A contributed fixture. |
@@ -1143,7 +1139,7 @@ honors in `actions` and `pointerActions`.
 | `scrollIntoView` | - | yes | - |
 | `selectOption` | `value` | yes | - |
 | `setInputFiles` | `paths`; empty clears the input | yes | - |
-| `setInputFilePayloads` | `files` with `name`, `mimeType`, and `Uint8Array` `buffer`; requires `filePayloads: true` on the engine | yes | - |
+| `setInputFilePayloads` | `files` with `name`, `mimeType`, and `Uint8Array` `buffer` | yes | - |
 | `dragTo` | `target`: a `NodeRef` or a `ViewportPoint` | yes | yes |
 | `swipe` | `direction`, `momentum?` | yes | yes |
 | `swipeTo` | `target`, `durationMs?` | - | yes |
@@ -1209,7 +1205,7 @@ export type LocatorAction =
 /** Every action kind; what an engine declares in `actions`. */
 export type LocatorActionKind = LocatorAction['kind'];
 
-/** The closed list of action kinds, in contract order; the type is derived from it. */
+/** The locator action kinds of SPI v1. List newer kinds explicitly. */
 export const LOCATOR_ACTION_KINDS = [
   'tap',
   'doubleTap',
@@ -1225,10 +1221,12 @@ export const LOCATOR_ACTION_KINDS = [
   'scrollIntoView',
   'selectOption',
   'setInputFiles',
-  'setInputFilePayloads',
   'dragTo',
   'swipe',
 ] as const satisfies readonly LocatorActionKind[];
+
+/** Every action kind understood by this version of core. */
+export const KNOWN_LOCATOR_ACTION_KINDS = [...LOCATOR_ACTION_KINDS, 'setInputFilePayloads'] as const satisfies readonly LocatorActionKind[];
 ```
 
 #### Pointer actions

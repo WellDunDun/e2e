@@ -74,6 +74,7 @@ export {
   EngineError,
   KEY_MODIFIERS,
   KEY_NAMES,
+  KNOWN_LOCATOR_ACTION_KINDS,
   LOCATOR_ACTION_KINDS,
   OBSERVED_NAME_LIMIT,
   OBSERVED_TEXT_LIMIT,
@@ -860,8 +861,6 @@ export interface Engine {
    * that predates the field never drops one silently.
    */
   readonly tapModifiers?: boolean;
-  /** Opts in to `setInputFilePayloads`; older engines may import the shared action list without implementing new kinds. */
-  readonly filePayloads?: boolean;
   /** capability: keyboard - requires observation. Input to whatever holds focus; see `EngineKeyboard`. */
   readonly keyboard?: EngineKeyboard;
   /**

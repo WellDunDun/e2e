@@ -71,22 +71,17 @@ describe('defineEngine', () => {
     );
   });
 
-  it('requires explicit filePayloads opt-in even for engines importing the shared action list', () => {
+  it('keeps the SPI v1 list stable and accepts an explicitly declared upload action', () => {
     const perform = async () => undefined;
     const legacy = defineEngine(observingEngine({ actions: LOCATOR_ACTION_KINDS, perform }));
-    expect(legacy.actions).toContain('setInputFiles');
     expect(legacy.actions).not.toContain('setInputFilePayloads');
-    const enabled = defineEngine(observingEngine({ actions: LOCATOR_ACTION_KINDS, perform, filePayloads: true }));
-    expect(enabled.filePayloads).toBe(true);
-    expect(enabled.actions).toContain('setInputFilePayloads');
-    expect(() => defineEngine(observingEngine({ actions: ['tap'], perform, filePayloads: true }))).toThrow(/filePayloads without the setInputFilePayloads action/);
-    expect(() => defineEngine(observingEngine({ actions: ['setInputFilePayloads'], perform }))).toThrow(/requires filePayloads: true/);
-    expect(() => defineEngine(observingEngine({ actions: ['tap'], perform, filePayloads: 'yes' as never }))).toThrow(/filePayloads must be a boolean/);
+    const enabled = defineEngine(observingEngine({ actions: ['setInputFilePayloads'], perform }));
+    expect(enabled.actions).toEqual(['setInputFilePayloads']);
   });
 
   it.each([null, {}, 42, 'setInputFilePayloads'])('reports malformed payload action lists as INVALID_CONFIG: %j', (actions) => {
     expect(() => defineEngine(observingEngine({
-      actions: actions as never, perform: async () => undefined, filePayloads: true,
+      actions: actions as never, perform: async () => undefined,
     }))).toThrow(expect.objectContaining({ code: 'INVALID_CONFIG' }));
   });
 
@@ -335,7 +330,6 @@ describe('createEngineSession', () => {
       engine: defineEngine(
         observingEngine({
           actions: LOCATOR_ACTION_KINDS,
-          filePayloads: true,
           perform: async (ref, action) => void calls.push(`${action.kind}:${ref.id}`),
         }),
       ),

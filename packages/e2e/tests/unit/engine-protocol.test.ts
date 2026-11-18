@@ -11,6 +11,7 @@ import {
   defineEngine,
   describeEngine,
   ENGINE_METHODS,
+  KNOWN_LOCATOR_ACTION_KINDS,
   LOCATOR_ACTION_KINDS,
   POINTER_ACTION_KINDS,
   EngineError,
@@ -118,8 +119,7 @@ describe('engine protocol', () => {
 
   it('negotiates payload uploads and preserves their bytes over JSON-RPC', async () => {
     const perform = vi.fn<NonNullable<Engine['perform']>>(async () => undefined);
-    const { local, remote } = overLoopback(toy({ actions: LOCATOR_ACTION_KINDS, filePayloads: true, perform }));
-    expect(remote.filePayloads).toBe(true);
+    const { local, remote } = overLoopback(toy({ actions: KNOWN_LOCATOR_ACTION_KINDS, perform }));
     expect(remote.actions).toContain('setInputFilePayloads');
     await remote.init!(initInfo());
     const action = { kind: 'setInputFilePayloads', files: [{ name: 'binary.bin', mimeType: 'application/octet-stream', buffer: new Uint8Array([0, 128, 255]) }] } as const;
@@ -130,7 +130,6 @@ describe('engine protocol', () => {
     expect(perform).toHaveBeenCalledWith(expect.anything(), action, expect.anything());
     await remote.dispose!(cleanup);
     const legacy = overLoopback(toy({ actions: LOCATOR_ACTION_KINDS, perform }));
-    expect(legacy.remote.filePayloads).toBeUndefined();
     expect(legacy.remote.actions).not.toContain('setInputFilePayloads');
   });
 
@@ -554,7 +553,7 @@ describe('engine protocol', () => {
       properties: Record<string, { items?: { enum: string[] } }>;
     };
     expect(schema.properties['methods']?.items?.enum).toEqual([...ENGINE_METHODS]);
-    expect(schema.properties['actions']?.items?.enum).toEqual([...LOCATOR_ACTION_KINDS]);
+    expect(schema.properties['actions']?.items?.enum).toEqual([...KNOWN_LOCATOR_ACTION_KINDS]);
     expect(schema.properties['pointerActions']?.items?.enum).toEqual([...POINTER_ACTION_KINDS]);
     const validate = new Ajv2020({ strict: false }).compile(schema);
     const { local } = overLoopback(

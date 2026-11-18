@@ -116,8 +116,6 @@ export interface EngineManifest {
   readonly pointerActions?: readonly PointerActionKind[];
   /** See `Engine.tapModifiers`. */
   readonly tapModifiers?: boolean;
-  /** See `Engine.filePayloads`. */
-  readonly filePayloads?: boolean;
 }
 
 /** What a connection serves: a run's provisioning, a worker, or `e2e doctor`'s checks. */
@@ -195,7 +193,7 @@ export type WireLocatorAction = Exclude<LocatorAction, FilePayloadAction> | {
 /** Encodes file payload bytes without changing other locator actions. */
 export function encodeLocatorAction(action: LocatorAction): WireLocatorAction {
   if (action.kind !== 'setInputFilePayloads') return action;
-  return { ...action, files: action.files.map((file) => ({ ...file, buffer: Buffer.from(file.buffer).toString('base64') })) };
+  return { ...action, files: action.files.map((file) => ({ ...file, buffer: Buffer.from(file.buffer.buffer, file.buffer.byteOffset, file.buffer.byteLength).toString('base64') })) };
 }
 
 /** Restores file payload bytes at the engine protocol boundary. */

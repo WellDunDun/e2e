@@ -9,7 +9,7 @@ import { engineBrand } from '../internal/brands.ts';
 import { ConfigurationError } from '../internal/errors.ts';
 import { obj } from '../internal/objects.ts';
 import { isSecret } from '../secrets.ts';
-import { ENGINE_SPI_VERSION, LOCATOR_ACTION_KINDS, POINTER_ACTION_KINDS } from './contract.ts';
+import { ENGINE_SPI_VERSION, KNOWN_LOCATOR_ACTION_KINDS, POINTER_ACTION_KINDS } from './contract.ts';
 import type { Secret } from '../types.ts';
 import type { Engine, EngineCapability, EngineFixtureContext, EngineHandle } from './index.ts';
 
@@ -28,7 +28,6 @@ const KNOWN_KEYS = [
   'performAt',
   'pointerActions',
   'tapModifiers',
-  'filePayloads',
   'keyboard',
   'fixtures',
   'state',
@@ -277,13 +276,6 @@ export function defineEngine<Fixtures extends object = {}>(declared: EngineSpec<
       throw invalid(name, 'declares tapModifiers without perform: modifiers ride the tap actions perform receives');
     }
   }
-  const declaredActions = spec.actions === undefined ? undefined : declaredKinds(name, 'actions', spec.actions, LOCATOR_ACTION_KINDS);
-  if (spec.filePayloads !== undefined) {
-    if (typeof spec.filePayloads !== 'boolean') throw invalid(name, 'filePayloads must be a boolean');
-    if (spec.filePayloads && !declaredActions?.includes('setInputFilePayloads')) {
-      throw invalid(name, 'declares filePayloads without the setInputFilePayloads action');
-    }
-  }
   if (spec.keyboard !== undefined && !capabilities.has('observation')) {
     throw invalid(name, 'declares keyboard without observe: the focused field is read off the observation');
   }
@@ -299,12 +291,7 @@ export function defineEngine<Fixtures extends object = {}>(declared: EngineSpec<
     const fn = spec[member];
     if (fn !== undefined) handle[member] = fn.bind(spec);
   }
-  if (declaredActions !== undefined) {
-    const actions = declaredActions.filter((kind) => kind !== 'setInputFilePayloads' || spec.filePayloads === true);
-    if (actions.length === 0) throw invalid(name, 'setInputFilePayloads requires filePayloads: true');
-    handle['actions'] = Object.freeze(actions);
-  }
-  if (spec.filePayloads === true) handle['filePayloads'] = true;
+  if (spec.actions !== undefined) handle['actions'] = declaredKinds(name, 'actions', spec.actions, KNOWN_LOCATOR_ACTION_KINDS);
   if (spec.tapModifiers === true) handle['tapModifiers'] = true;
   if (spec.pointerActions !== undefined) {
     handle['pointerActions'] = declaredKinds(name, 'pointerActions', spec.pointerActions, POINTER_ACTION_KINDS);

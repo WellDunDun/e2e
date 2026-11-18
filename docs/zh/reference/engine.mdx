@@ -85,7 +85,7 @@ export interface EngineHandle<Fixtures extends object = {}> extends Engine {
 | `observe`、`readStyle`、`locate`、`perform`、`performAt`、`prepare`、`finish`、`doctor`、`init`、`startAttempt`、`settleAttempt`、`endAttempt`、`dispose`、`validateApp` | 不是函数。 |
 | 任何其他顶层键 | 对象字面量中出现此类键，包括 `app`：应在测试目标上声明应用，并在 `validateApp` 中检查。不会检查类实例的自有字段。 |
 | `readStyle`、`perform`、`locate`、`performAt`、`keyboard` | 已声明，但未声明 `observe`。 |
-| `perform`、`actions` | 只声明了其中一个。`actions` 列表为空、包含重复的种类，或指定了 `LOCATOR_ACTION_KINDS` 之外的种类。 |
+| `perform`、`actions` | 只声明了其中一个。`actions` 列表为空、包含重复的种类，或指定了 `KNOWN_LOCATOR_ACTION_KINDS` 之外的种类。 |
 | `performAt`、`pointerActions` | 只声明了其中一个。`pointerActions` 列表为空、包含重复的种类，或指定了 `POINTER_ACTION_KINDS` 之外的种类。 |
 | `tapModifiers` | 不是布尔值，或设为 `true` 但未声明 `perform`。 |
 | `keyboard`、`state`、`artifacts`、`session` | 包含未知键或非函数成员。`keyboard` 缺少 `type` 和 `press`；`state` 未同时包含 `capture` 和 `restore`；`artifacts` 缺少 `screenshot`；声明了 `startVideo` 却没有 `stopVideo`，或反之。 |
@@ -214,7 +214,6 @@ export interface Engine {
    */
   readonly tapModifiers?: boolean;
   /** Opts in to in-memory file payloads, in addition to declaring the action. */
-  readonly filePayloads?: boolean;
   /** capability: keyboard - requires observation. Input to whatever holds focus; see `EngineKeyboard`. */
   readonly keyboard?: EngineKeyboard;
   /**
@@ -1110,7 +1109,7 @@ export type LocatorAction =
 /** Every action kind; what an engine declares in `actions`. */
 export type LocatorActionKind = LocatorAction['kind'];
 
-/** The closed list of action kinds, in contract order; the type is derived from it. */
+/** The locator action kinds of SPI v1. List newer kinds explicitly. */
 export const LOCATOR_ACTION_KINDS = [
   'tap',
   'doubleTap',
@@ -1126,10 +1125,12 @@ export const LOCATOR_ACTION_KINDS = [
   'scrollIntoView',
   'selectOption',
   'setInputFiles',
-  'setInputFilePayloads',
   'dragTo',
   'swipe',
 ] as const satisfies readonly LocatorActionKind[];
+
+/** Every action kind understood by this version of core. */
+export const KNOWN_LOCATOR_ACTION_KINDS = [...LOCATOR_ACTION_KINDS, 'setInputFilePayloads'] as const satisfies readonly LocatorActionKind[];
 ```
 
 #### 指针操作
