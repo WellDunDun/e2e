@@ -203,7 +203,9 @@ export class LocatorEngine {
       if (action.kind === 'setInputFilePayloads') {
         throw new ConfigurationError(
           'UNSUPPORTED_CAPABILITY',
-          'in-memory files for setInputFiles are not available on this target; update its engine or pass a file path',
+          `in-memory files for setInputFiles are not available on this target; update its engine${
+            this.session.actions.has('setInputFiles') ? ' or pass a file path' : ''
+          }`,
         );
       }
       throw new ConfigurationError(

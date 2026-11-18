@@ -262,6 +262,20 @@ describe('locator action options', () => {
     expect(perform).toHaveBeenCalledWith(expect.anything(), { kind: 'setInputFiles', paths: ['a.txt'] }, expect.anything());
   });
 
+  it('does not suggest file paths when the engine supports no uploads', async () => {
+    const locate = vi.fn(async () => [BOX]);
+    const perform = vi.fn(async () => undefined);
+    const { screen } = screenOver({ locate, perform, actions: ['tap'], observe: () => snapshot(NODES), timeoutMs: 1_000 });
+    await expect(screen.getByLabel('Agree').setInputFiles({
+      name: 'a.txt', mimeType: 'text/plain', buffer: Buffer.from('data'),
+    })).rejects.toMatchObject({
+      code: 'UNSUPPORTED_CAPABILITY',
+      message: 'in-memory files for setInputFiles are not available on this target; update its engine',
+    });
+    expect(locate).not.toHaveBeenCalled();
+    expect(perform).not.toHaveBeenCalled();
+  });
+
   it.each([
     null, 42, {}, Object.assign([], { length: 1 }), { name: '', mimeType: 'text/plain', buffer: Buffer.alloc(0) },
     { name: 'a.txt', buffer: Buffer.alloc(0) },
