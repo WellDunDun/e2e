@@ -1,8 +1,7 @@
 {
-  "name": "android",
+  "name": "upload-capable",
   "version": "0.1.0",
   "spiVersion": 1,
-  "platform": "android",
   "workers": 1,
   "methods": [
     "engine/observe",
