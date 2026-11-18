@@ -120,7 +120,7 @@ run only in a browser, so a test that uses it declares
 | `click()`, `dblclick()` | `tap()`, `doubleTap()`; `click()` and `dblclick()` are aliases |
 | `click({ button: 'right' })`, `click({ delay })` | `secondaryTap()`, `longPress({ duration })` |
 | `click({ position })`, `click({ modifiers })` | `tap({ position })`, `tap({ modifiers })` |
-| `fill()`, `pressSequentially()`, `clear()`, `focus()`, `hover()`, `check()`, `uncheck()`, `dragTo()`, `setInputFiles(path)`, `selectOption({ label })` or `{ value }` | the same, without `force`, `trial`, or `position` |
+| `fill()`, `pressSequentially()`, `clear()`, `focus()`, `blur()`, `hover()`, `check()`, `uncheck()`, `dragTo()`, `setInputFiles(path)`, `selectOption({ label })` or `{ value }` | the same, without `force`, `trial`, or `position` |
 | `press(key)` | the same for one character or a [named key](/reference/engine#keys); `browser.keyboard.press` after `focus()` for a key code |
 | `innerText()`, `allInnerTexts()`, `scrollIntoViewIfNeeded()` | `textContent()`, `allTextContents()`, `scrollIntoView()` |
 | `textContent()`, `allTextContents()`, `inputValue()`, `getAttribute()`, `boundingBox()`, `isVisible()`, `isHidden()`, `isEnabled()`, `isDisabled()`, `isChecked()`, `waitFor({ state })` | the same |

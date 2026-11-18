@@ -109,7 +109,7 @@ test('checkout', async ({ app, agent, screen }) => {
 | `click()`, `dblclick()` | `tap()`、`doubleTap()`；`click()` 和 `dblclick()` 是别名 |
 | `click({ button: 'right' })`, `click({ delay })` | `secondaryTap()`、`longPress({ duration })` |
 | `click({ position })`, `click({ modifiers })` | `tap({ position })`、`tap({ modifiers })` |
-| `fill()`, `pressSequentially()`, `clear()`, `focus()`, `hover()`, `check()`, `uncheck()`, `dragTo()`, `setInputFiles(path)`, `selectOption({ label })` 或 `{ value }` | 相同，但不支持 `force`、`trial` 或 `position` |
+| `fill()`, `pressSequentially()`, `clear()`, `focus()`, `blur()`, `hover()`, `check()`, `uncheck()`, `dragTo()`, `setInputFiles(path)`, `selectOption({ label })` 或 `{ value }` | 相同，但不支持 `force`、`trial` 或 `position` |
 | `press(key)` | 单个字符或[命名按键](/reference/engine#keys)的用法相同；按键代码则在 `focus()` 后使用 `browser.keyboard.press` |
 | `innerText()`, `allInnerTexts()`, `scrollIntoViewIfNeeded()` | `textContent()`、`allTextContents()`、`scrollIntoView()` |
 | `textContent()`, `allTextContents()`, `inputValue()`, `getAttribute()`, `boundingBox()`, `isVisible()`, `isHidden()`, `isEnabled()`, `isDisabled()`, `isChecked()`, `waitFor({ state })` | 相同 |

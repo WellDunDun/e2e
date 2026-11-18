@@ -119,6 +119,30 @@ test.describe('controls', { requires: ['browser'], tags: ['controls'] }, () => {
     await expect(first).toBeFocused();
   });
 
+  test('blur removes focus only from the matched node', async ({ browser }) => {
+    const first = browser.locator('#first');
+    const second = browser.locator('#second');
+
+    await first.focus();
+    await expect(first).toBeFocused();
+    await second.blur();
+    await expect(first).toBeFocused();
+
+    await first.blur({ timeout: 1_000 });
+    await expect(first).not.toBeFocused();
+  });
+
+  test('blur works on an input matched by its current value', async ({ browser, screen }) => {
+    const first = screen.getByLabel('First');
+    await first.fill('Find by value');
+    await browser.evaluate("() => { document.querySelector('#first').blur = () => {}; }");
+    await first.focus();
+    await expect(first).toBeFocused();
+
+    await screen.getByDisplayValue('Find by value').blur();
+    await expect(first).not.toBeFocused();
+  });
+
   test('press spells modifiers the way the app sees them', async ({ screen }) => {
     const keys = screen.getByLabel('Key log input');
     const log = screen.getByLabel('Key log');

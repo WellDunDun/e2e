@@ -12,6 +12,7 @@ import {
   unique,
   test,
   type ActionDetails,
+  type ActionOptions,
   type ActionEvent,
   type ActionName,
   type Agent,
@@ -1164,3 +1165,8 @@ createCoreAgent({}, {});
 declare const coreExecutor: CoreStepExecutor;
 declare const coreStore: CoreCacheStore;
 void createCoreAgent(gadgetSession, { executor: coreExecutor, cache: { store: coreStore } });
+
+declare const blurTarget: Locator;
+void (blurTarget.blur satisfies (options?: ActionOptions) => Promise<void>);
+// @ts-expect-error blur accepts action options, not a selector
+void blurTarget.blur('input');

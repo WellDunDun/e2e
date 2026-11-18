@@ -579,6 +579,8 @@ export interface Locator extends Omit<Screen, 'tree' | 'debug'> {
   selectOption(value: SelectOption, options?: ActionOptions): Promise<void>;
   /** Focuses exactly one node. */
   focus(options?: ActionOptions): Promise<void>;
+  /** Removes focus from exactly one node if it is focused. */
+  blur(options?: ActionOptions): Promise<void>;
   /** Hovers over exactly one matching actionable node. */
   hover(options?: ActionOptions): Promise<void>;
   /** Sets the files of exactly one file input, or of a control that opens a file chooser; paths resolve from the project root, and an empty array clears the input. */

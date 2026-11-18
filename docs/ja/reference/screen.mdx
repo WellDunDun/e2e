@@ -711,6 +711,19 @@ focus(options?: ActionOptions): Promise<void>;
 await screen.getByLabel('Email').focus();
 ```
 
+#### `blur`
+
+```ts
+/** Removes focus from exactly one node if it is focused. */
+blur(options?: ActionOptions): Promise<void>;
+```
+
+Web 専用です。対象のノードにフォーカスがなければ何も起きません。
+
+```ts
+await screen.getByLabel('Email').blur();
+```
+
 #### `hover`
 
 ```ts

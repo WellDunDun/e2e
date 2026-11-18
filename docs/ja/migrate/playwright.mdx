@@ -109,7 +109,7 @@ test('checkout', async ({ app, agent, screen }) => {
 | `click()`, `dblclick()` | `tap()`、`doubleTap()`。`click()` と `dblclick()` は別名 |
 | `click({ button: 'right' })`, `click({ delay })` | `secondaryTap()`、`longPress({ duration })` |
 | `click({ position })`, `click({ modifiers })` | `tap({ position })`、`tap({ modifiers })` |
-| `fill()`, `pressSequentially()`, `clear()`, `focus()`, `hover()`, `check()`, `uncheck()`, `dragTo()`, `setInputFiles(path)`, `selectOption({ label })` または `{ value }` | 同じ。ただし `force`、`trial`、`position` はなし |
+| `fill()`, `pressSequentially()`, `clear()`, `focus()`, `blur()`, `hover()`, `check()`, `uncheck()`, `dragTo()`, `setInputFiles(path)`, `selectOption({ label })` または `{ value }` | 同じ。ただし `force`、`trial`、`position` はなし |
 | `press(key)` | 1 文字または[名前付きキー](/reference/engine#keys)なら同じ。キーコードは `focus()` 後に `browser.keyboard.press` |
 | `innerText()`, `allInnerTexts()`, `scrollIntoViewIfNeeded()` | `textContent()`、`allTextContents()`、`scrollIntoView()` |
 | `textContent()`, `allTextContents()`, `inputValue()`, `getAttribute()`, `boundingBox()`, `isVisible()`, `isHidden()`, `isEnabled()`, `isDisabled()`, `isChecked()`, `waitFor({ state })` | 同じ |
