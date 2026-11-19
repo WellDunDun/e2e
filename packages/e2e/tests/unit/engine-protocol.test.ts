@@ -523,7 +523,7 @@ describe('engine protocol', () => {
     const validate = new Ajv2020({ strict: false }).compile(schema);
     const { local } = overLoopback(
       toy({
-        actions: ['tap'],
+        actions: ['tap', 'blur'],
         perform: async () => {},
         pointerActions: ['tap'],
         performAt: async () => {},

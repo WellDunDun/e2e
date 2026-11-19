@@ -143,6 +143,17 @@ test.describe('controls', { requires: ['browser'], tags: ['controls'] }, () => {
     await expect(first).not.toBeFocused();
   });
 
+  test('blur removes focus from MathML matched by label', async ({ browser, screen }) => {
+    await browser.evaluate(`() => {
+      document.body.insertAdjacentHTML('beforeend', '<math><mi tabindex="0" aria-label="Formula" id="term">x</mi></math>');
+      document.querySelector('#term').focus();
+    }`);
+    const term = screen.getByLabel('Formula');
+    await expect(term).toBeFocused();
+    await term.blur();
+    await expect(term).not.toBeFocused();
+  });
+
   test('press spells modifiers the way the app sees them', async ({ screen }) => {
     const keys = screen.getByLabel('Key log input');
     const log = screen.getByLabel('Key log');

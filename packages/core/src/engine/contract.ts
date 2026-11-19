@@ -303,7 +303,7 @@ export type LocatorAction =
 /** Every action kind; what an engine declares in `actions`. */
 export type LocatorActionKind = LocatorAction['kind'];
 
-/** The locator action kinds of SPI v1. List newer kinds explicitly. */
+/** The locator action kinds of SPI v1. List newer kinds explicitly. Use KNOWN_LOCATOR_ACTION_KINDS to check an action kind. */
 export const LOCATOR_ACTION_KINDS = [
   'tap',
   'doubleTap',
