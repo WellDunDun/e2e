@@ -79,7 +79,7 @@ describe('defineEngine', () => {
     expect(enabled.actions).toEqual(['setInputFilePayloads']);
   });
 
-  it.each([null, {}, 42, 'setInputFilePayloads'])('reports malformed payload action lists as INVALID_CONFIG: %j', (actions) => {
+  it.each([null, {}, 42, 'setInputFilePayloads'])('reports malformed action lists as INVALID_CONFIG: %j', (actions) => {
     expect(() => defineEngine(observingEngine({
       actions: actions as never, perform: async () => undefined,
     }))).toThrow(expect.objectContaining({ code: 'INVALID_CONFIG' }));

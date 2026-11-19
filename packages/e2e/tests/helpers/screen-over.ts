@@ -40,7 +40,6 @@ export interface ScreenOverOptions {
   readonly keyboard?: EngineKeyboard;
   /** Whether the engine declares `tapModifiers`; default not. */
   readonly tapModifiers?: boolean;
-  /** Whether to opt in to in-memory uploads; defaults true with the default action list. */
   /** Action and assertion timeout in milliseconds. */
   readonly timeoutMs: number;
 }

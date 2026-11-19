@@ -35,7 +35,6 @@ describe.each(schemas)('%s schema', (name) => {
   });
 
   if (name === 'engine-manifest-v1') {
-
     it('rejects a method listed twice', () => {
       const manifest = readJson('fixtures', 'engine-manifest-v1.valid.json') as { methods: string[] };
       manifest.methods.push('lifecycle/doctor');

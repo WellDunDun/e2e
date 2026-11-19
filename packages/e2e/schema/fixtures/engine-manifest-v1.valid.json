@@ -1,7 +1,8 @@
 {
-  "name": "upload-capable",
+  "name": "android",
   "version": "0.1.0",
   "spiVersion": 1,
+  "platform": "android",
   "workers": 1,
   "methods": [
     "engine/observe",
@@ -22,7 +23,7 @@
     "lifecycle/startAttempt",
     "lifecycle/endAttempt"
   ],
-  "actions": ["tap", "doubleTap", "longPress", "fill", "clear", "press", "check", "uncheck", "focus", "scrollIntoView", "setInputFiles", "dragTo", "swipe"],
+  "actions": ["tap", "doubleTap", "longPress", "fill", "clear", "press", "check", "uncheck", "focus", "scrollIntoView", "dragTo", "swipe"],
   "pointerActions": ["tap", "doubleTap", "longPress", "dragTo", "swipe", "swipeTo"],
   "isolation": "worker"
 }
