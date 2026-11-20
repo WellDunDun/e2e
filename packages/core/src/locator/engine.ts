@@ -473,12 +473,12 @@ const ref = await this.singleOf(await this.resolveOnce(expression, reads, missin
     action: LocatorAction | ActionBuilder,
     timeoutMs?: number,
   ): Promise<void> {
-    // Prefer the original clear action when the engine supports paths.
-    if (typeof action !== 'function' && action.kind === 'setInputFiles' && action.paths.length === 0 &&
-        !this.session.actions.has('setInputFiles') && this.session.actions.has('setInputFilePayloads')) {
-      action = { kind: 'setInputFilePayloads', files: [] };
-    }
     await this.performUntil(expression, action, this.deadline(timeoutMs));
+  }
+
+  /** Reports whether the target engine declares this locator action. */
+  supports(kind: LocatorAction['kind']): boolean {
+    return this.session.actions.has(kind);
   }
 
   /**

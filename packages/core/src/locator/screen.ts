@@ -545,6 +545,10 @@ class LocatorImpl extends ScreenImpl implements Locator {
     if (list.some((entry) => typeof entry === 'string') && list.some(isPlainObject)) {
       throw new TestError('INVALID_ARGUMENT', 'File paths cannot be mixed with buffers');
     }
+    if (list.length === 0 && !this.context.engine.supports('setInputFiles') &&
+        this.context.engine.supports('setInputFilePayloads')) {
+      return this.perform('setInputFiles', { kind: 'setInputFilePayloads', files: [] }, options);
+    }
     if (list.length === 0 || typeof list[0] === 'string') {
       const base = this.context.projectRoot;
       const paths = list.map((entry) => {

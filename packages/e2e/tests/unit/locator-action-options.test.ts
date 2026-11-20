@@ -260,6 +260,8 @@ describe('locator action options', () => {
     });
     const input = screen.getByLabel('Agree');
     await input.setInputFiles({ name: 'a.txt', mimeType: 'text/plain', buffer: Buffer.from('a') });
+    await expect(input.setInputFiles('a.txt')).rejects.toMatchObject({ code: 'UNSUPPORTED_CAPABILITY' });
+    expect(perform).toHaveBeenCalledTimes(1);
     await input.setInputFiles([]);
     expect(perform.mock.calls).toHaveLength(2);
     expect(perform).toHaveBeenNthCalledWith(2, expect.anything(), { kind: 'setInputFilePayloads', files: [] }, expect.anything());
@@ -291,6 +293,7 @@ describe('locator action options', () => {
       code: 'UNSUPPORTED_CAPABILITY',
       message: 'in-memory files for setInputFiles are not available on this target; update its engine',
     });
+    await expect(screen.getByLabel('Agree').setInputFiles([])).rejects.toMatchObject({ code: 'UNSUPPORTED_CAPABILITY' });
     expect(locate).not.toHaveBeenCalled();
     expect(perform).not.toHaveBeenCalled();
   });
