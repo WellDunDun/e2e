@@ -233,7 +233,10 @@ describe('locator action options', () => {
   it('snapshots single files and arrays as bytes without putting contents in steps', async () => {
     const { screen, steps, actions } = boxScreen();
     const file = { name: 'receipt.bin', mimeType: 'application/octet-stream', buffer: Buffer.from([0, 128, 255]) };
-    await screen.getByLabel('Agree').setInputFiles(file);
+    const pending = screen.getByLabel('Agree').setInputFiles(file);
+    file.buffer[0] = 99;
+    await pending;
+    file.buffer[0] = 0;
     await screen.getByLabel('Agree').setInputFiles([file, { ...file, name: 'empty.bin', buffer: Buffer.alloc(0) }]);
     const encoded = { name: file.name, mimeType: file.mimeType, buffer: new Uint8Array([0, 128, 255]) };
     expect(actions).toEqual([
@@ -244,6 +247,22 @@ describe('locator action options', () => {
     const action = actions[0];
     if (action?.kind === 'setInputFilePayloads') expect(action.files[0]?.buffer).toEqual(new Uint8Array([0, 128, 255]));
     expect(JSON.stringify(steps.all())).not.toContain('AID/');
+  });
+
+  it('uploads then clears on a payload-only engine', async () => {
+    const perform = vi.fn(async () => undefined);
+    const { screen } = screenOver({
+      actions: ['setInputFilePayloads'],
+      locate: async () => [BOX],
+      observe: () => snapshot(NODES),
+      perform,
+      timeoutMs: 1_000,
+    });
+    const input = screen.getByLabel('Agree');
+    await input.setInputFiles({ name: 'a.txt', mimeType: 'text/plain', buffer: Buffer.from('a') });
+    await input.setInputFiles([]);
+    expect(perform.mock.calls).toHaveLength(2);
+    expect(perform).toHaveBeenNthCalledWith(2, expect.anything(), { kind: 'setInputFilePayloads', files: [] }, expect.anything());
   });
 
   it.each([{ actions: ['setInputFiles'] as const }, { actions: LOCATOR_ACTION_KINDS }])('rejects payload uploads when the engine declares no payload action', async ({ actions }) => {
