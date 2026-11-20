@@ -13,7 +13,9 @@ description: 通过观察、操作、生命周期钩子和测试夹具构建引�
 import { defineEngine, resolveExpression, type EngineHandle } from 'e2e/engine';
 import { connect } from './client.ts';
 
-export function kiosk(options: { host: string }): EngineHandle {
+export interface KioskEngine extends EngineHandle {}
+
+export function kiosk(options: { host: string }): KioskEngine {
   const client = connect(options.host);
   return defineEngine({
     name: 'kiosk',
@@ -71,6 +73,8 @@ export interface EngineHandle<Fixtures extends object = {}> extends Engine {
 句柄上的每个函数都绑定到其来源规范，因此类实例与对象字面量一样，都可以作为实现主体。
 
 `Fixtures` 定义引擎的 [`fixtures`](#contributed-fixtures) 所提供的测试夹具类型，例如 `{ browser: Browser }`。对于其中声明的每个测试夹具，编译器都要求 `fixtures` 中存在返回该测试夹具的工厂；`screen`、`app` 和 `platform` 不需要，因为每个会话都包含它们。运行时不会检查这一点。有了它，[`@e2e-dev/core`](/core) 的 `launch` 无需手写类型参数就能推导会话的测试夹具类型：从工厂返回 `defineEngine<{ device: Device }>(...)` 即可。
+
+请像上面的 `KioskEngine` 一样，从工厂返回自己的接口。这样，推导类型的配置文件就能通过你的包名引用该类型。如果直接返回 `EngineHandle`，设置了 `declaration: true` 的 pnpm 项目可能会因 TS2883 报错。
 
 当规范违反以下任一规则时，`defineEngine` 会抛出 `INVALID_CONFIG`：
 
@@ -1046,6 +1050,7 @@ return {
 | `check` | - | 是 | - |
 | `uncheck` | - | 是 | - |
 | `focus` | - | 是 | - |
+| `blur` | - | 是 | - |
 | `hover` | - | 是 | 是 |
 | `scrollIntoView` | - | 是 | - |
 | `selectOption` | `value` | 是 | - |
@@ -1092,6 +1097,7 @@ export type LocatorAction =
         | 'uncheck'
         | 'clear'
         | 'focus'
+        | 'blur'
         | 'hover'
         | 'scrollIntoView';
     }
@@ -1102,7 +1108,7 @@ export type LocatorAction =
   | { readonly kind: 'setInputFiles'; readonly paths: readonly string[] }
   | {
       readonly kind: 'setInputFilePayloads';
-      /** In-memory files; the protocol encodes their bytes only when crossing the wire. */
+      /** In-memory files; an empty array clears the input. The protocol encodes bytes only on the wire. */
       readonly files: readonly { readonly name: string; readonly mimeType: string; readonly buffer: Uint8Array }[];
     }
   | { readonly kind: 'dragTo'; readonly target: NodeRef }
@@ -1115,7 +1121,7 @@ export type LocatorAction =
 /** Every action kind; what an engine declares in `actions`. */
 export type LocatorActionKind = LocatorAction['kind'];
 
-/** The locator action kinds of SPI v1. List newer kinds explicitly. */
+/** The locator action kinds of SPI v1. List newer kinds explicitly. Use KNOWN_LOCATOR_ACTION_KINDS to check an action kind. */
 export const LOCATOR_ACTION_KINDS = [
   'tap',
   'doubleTap',
@@ -1136,7 +1142,7 @@ export const LOCATOR_ACTION_KINDS = [
 ] as const satisfies readonly LocatorActionKind[];
 
 /** Every action kind understood by this version of core. */
-export const KNOWN_LOCATOR_ACTION_KINDS = [...LOCATOR_ACTION_KINDS, 'setInputFilePayloads'] as const satisfies readonly LocatorActionKind[];
+export const KNOWN_LOCATOR_ACTION_KINDS = [...LOCATOR_ACTION_KINDS, 'blur', 'setInputFilePayloads'] as const satisfies readonly LocatorActionKind[];
 ```
 
 #### 指针操作
@@ -2173,7 +2179,7 @@ return context.fixture('printer', printer, { print: { kind: 'resource' } });
 
 ### 导出的名称
 
-`EngineCleanupContext`、`EngineDisposeContext`、`OperationContext`、`TextPattern`、`SemanticQuery`、`LocatorExpression`、`NodeRef`、`SemanticNode`、`ViewportPoint`、`ViewportSize`、`ObservationPixels`、`LocatorAction`、`LocatorActionKind`、`PointerAction`、`PointerActionKind`、`ScrollDirection`、`Momentum`、`SelectOption`、`Key`、`KeyModifier`、`KeyName`、`ParsedKey`、`ENGINE_SPI_VERSION`、`LOCATOR_ACTION_KINDS`、`POINTER_ACTION_KINDS`、`KEY_MODIFIERS`、`KEY_NAMES`、`parseKey`、`ENGINE_ERROR_CODES`、`RETRYABLE_ENGINE_ERROR_CODES`、`Secret`、`isSecret`、`TextMatch`、`JsonValue`、`JsonValueRules`、`ResolveExpressionOptions`、`PollConditionOptions`、`WithoutUndefined`、`FixtureOperation`、`EngineIsolation`、`OBSERVED_NAME_LIMIT` 和 `OBSERVED_TEXT_LIMIT` 均从 `e2e/engine` 导出。[引擎协议](/reference/engine-protocol)的 `connectEngine`、`serveEngine`、`describeEngine`、`spawnTransport`、`socketTransport`、`loopbackTransport`、`ENGINE_METHODS`、`ENGINE_PROTOCOL_VERSION` 及其类型也从这里导出。
+`EngineCleanupContext`、`EngineDisposeContext`、`OperationContext`、`TextPattern`、`SemanticQuery`、`LocatorExpression`、`NodeRef`、`SemanticNode`、`ViewportPoint`、`ViewportSize`、`ObservationPixels`、`LocatorAction`、`LocatorActionKind`、`PointerAction`、`PointerActionKind`、`ScrollDirection`、`Momentum`、`SelectOption`、`Key`、`KeyModifier`、`KeyName`、`ParsedKey`、`ENGINE_SPI_VERSION`、`LOCATOR_ACTION_KINDS`、`KNOWN_LOCATOR_ACTION_KINDS`、`POINTER_ACTION_KINDS`、`KEY_MODIFIERS`、`KEY_NAMES`、`parseKey`、`ENGINE_ERROR_CODES`、`RETRYABLE_ENGINE_ERROR_CODES`、`Secret`、`isSecret`、`TextMatch`、`JsonValue`、`JsonValueRules`、`ResolveExpressionOptions`、`PollConditionOptions`、`WithoutUndefined`、`FixtureOperation`、`EngineIsolation`、`OBSERVED_NAME_LIMIT` 和 `OBSERVED_TEXT_LIMIT` 均从 `e2e/engine` 导出。[引擎协议](/reference/engine-protocol)的 `connectEngine`、`serveEngine`、`describeEngine`、`spawnTransport`、`socketTransport`、`loopbackTransport`、`ENGINE_METHODS`、`ENGINE_PROTOCOL_VERSION` 及其类型也从这里导出。
 
 ### `SemanticNode`
 

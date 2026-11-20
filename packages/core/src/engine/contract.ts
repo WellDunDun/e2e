@@ -284,6 +284,7 @@ export type LocatorAction =
         | 'uncheck'
         | 'clear'
         | 'focus'
+        | 'blur'
         | 'hover'
         | 'scrollIntoView';
     }
@@ -294,7 +295,7 @@ export type LocatorAction =
   | { readonly kind: 'setInputFiles'; readonly paths: readonly string[] }
   | {
       readonly kind: 'setInputFilePayloads';
-      /** In-memory files; the protocol encodes their bytes only when crossing the wire. */
+      /** In-memory files; an empty array clears the input. The protocol encodes bytes only on the wire. */
       readonly files: readonly { readonly name: string; readonly mimeType: string; readonly buffer: Uint8Array }[];
     }
   | { readonly kind: 'dragTo'; readonly target: NodeRef }
@@ -307,7 +308,7 @@ export type LocatorAction =
 /** Every action kind; what an engine declares in `actions`. */
 export type LocatorActionKind = LocatorAction['kind'];
 
-/** The locator action kinds of SPI v1. List newer kinds explicitly. */
+/** The locator action kinds of SPI v1. List newer kinds explicitly. Use KNOWN_LOCATOR_ACTION_KINDS to check an action kind. */
 export const LOCATOR_ACTION_KINDS = [
   'tap',
   'doubleTap',
@@ -328,7 +329,7 @@ export const LOCATOR_ACTION_KINDS = [
 ] as const satisfies readonly LocatorActionKind[];
 
 /** Every action kind understood by this version of core. */
-export const KNOWN_LOCATOR_ACTION_KINDS = [...LOCATOR_ACTION_KINDS, 'setInputFilePayloads'] as const satisfies readonly LocatorActionKind[];
+export const KNOWN_LOCATOR_ACTION_KINDS = [...LOCATOR_ACTION_KINDS, 'blur', 'setInputFilePayloads'] as const satisfies readonly LocatorActionKind[];
 
 /**
  * One action `performAt` carries out at a viewport point, with no node

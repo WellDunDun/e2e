@@ -111,6 +111,21 @@ test.describe('page set input files', { requires: ['browser'], tags: ['playwrigh
     expect(await browser.evaluate(readFirstFile('input'))).toBe('In-memory résumé');
   });
 
+  test('blurs a focused field, then uploads and clears an in-memory file', async ({ browser }) => {
+    await browser.goto(content('<input id="field"><input type="file">'));
+    const field = browser.locator('#field');
+    await field.focus();
+    await expect(field).toBeFocused();
+    await field.blur();
+    await expect(field).not.toBeFocused();
+
+    const input = browser.locator('input[type=file]');
+    await input.setInputFiles({ name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('notes') });
+    expect(await browser.evaluate(readFirstFile('input[type=file]'))).toBe('notes');
+    await input.setInputFiles([]);
+    expect(await browser.evaluate("() => document.querySelector('input[type=file]').files.length")).toBe(0);
+  });
+
   test('uploads in-memory binary files and clears them', async ({ browser }) => {
     await browser.goto('/input/fileupload-multi.html');
     await browser.locator('input[type=file]').setInputFiles([

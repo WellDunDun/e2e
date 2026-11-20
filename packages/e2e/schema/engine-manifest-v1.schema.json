@@ -93,6 +93,7 @@
           "setInputFiles",
           "dragTo",
           "swipe",
+          "blur",
           "setInputFilePayloads"
         ]
       }
