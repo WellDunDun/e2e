@@ -5,6 +5,7 @@
  */
 
 import { z } from 'zod';
+import { json, junit, list as listReporter, markdown } from '../../src/reporters.ts';
 import {
   credentials,
   expect,
@@ -48,6 +49,7 @@ import {
   type TestFilterCandidate,
   type TestFilterContext,
   type TestRegistrar,
+  type EachRegistrar,
   type Unique,
   type CacheStore,
   type ExecutorObservation,
@@ -173,6 +175,11 @@ void (screen.tree() satisfies Promise<string>);
 void (screen.debug({ timeout: 1000 }) satisfies Promise<void>);
 // @ts-expect-error tree reads the whole screen; a locator does not scope it
 void screen.getByRole('list').tree();
+void (screen.pause() satisfies Promise<void>);
+// @ts-expect-error pause stops the whole test, so a locator doesn't scope it
+void screen.getByRole('list').pause();
+// @ts-expect-error pause doesn't take options
+void screen.pause({ timeout: 1000 });
 
 declare const cleanupContext: EngineCleanupContext;
 declare const disposeContext: EngineDisposeContext;
@@ -362,6 +369,30 @@ if (runEvent.type === 'step') {
 ({ onRunFinished: async () => undefined }) satisfies Reporter;
 // @ts-expect-error reporter ids are a closed union
 ({ targets, reporters: ['xunit'] }) satisfies E2EConfig;
+// The built-ins are factories on the same contract, beside ids and a project's own reporters.
+({ targets, reporters: [listReporter(), json(), junit({ outputFile: 'reports/junit.xml' }), markdown(), 'junit', reporter] }) satisfies E2EConfig;
+// @ts-expect-error the junit reporter takes an outputFile, nothing else
+junit({ output: 'reports' });
+({
+  name: 'dots',
+  printsTo: 'stdout',
+  onOutput: ({ stream, text, target, pair }) => void process[stream].write(`${target ?? 'runner'} ${pair?.testId ?? ''} ${text}`),
+  onStepPrompt: (prompt) => {
+    prompt?.steps[0].step.label satisfies string | undefined;
+    prompt?.steps[0].step.attachId satisfies string | undefined;
+    // @ts-expect-error reporters receive prompt data without the runner's attach hook
+    prompt?.attach;
+  },
+  onSummary: (rows) => void rows.map((row) => row.label),
+}) satisfies Reporter;
+({
+  name: 'pages',
+  reportFiles: async (finished) => [{ path: 'reports/run.txt', content: finished.report.run.status, label: 'Run' }],
+}) satisfies Reporter;
+// @ts-expect-error printsTo names a terminal stream
+({ name: 'logs', printsTo: 'console', onEvent: () => undefined }) satisfies Reporter;
+// @ts-expect-error a report file holds text
+({ name: 'pages', reportFiles: () => [{ path: 'run.bin', content: new Uint8Array() }] }) satisfies Reporter;
 
 // A test filter is a named object under filters; it answers with the tests to leave out, each with a reason.
 const areas = {
@@ -605,9 +636,59 @@ void test.skipIf(isFeatureOn());
 void test.runIf(Promise.resolve(true));
 // @ts-expect-error a union with a Promise could still be a Promise
 void test.runIf(isFeatureOn() as Promise<boolean> | boolean);
+// fixme takes exactly skip's shapes: a registration returns a TestCase, a call inside a body returns nothing.
+test.fixme('not yet', async () => {}) satisfies ReturnType<typeof test>;
+void (test.fixme(true, 'flaky on webkit') satisfies void);
+void (test.fixme('flaky on webkit') satisfies void);
+void (test.fixme() satisfies void);
+test.extend<{ x: number }>().fixme('uses x', async ({ x }) => { x satisfies number; });
+test.extend<{}, { db: number }>().fixme('uses a worker fixture', async ({ db }) => { db satisfies number; });
+// @ts-expect-error fixme takes no test options
+test.fixme('not yet', { tags: ['@fs'] }, async () => {});
+// @ts-expect-error the condition is a boolean; a truthy value must be converted first
+test.fixme(process.env['CI'], 'not on CI');
+// @ts-expect-error a reason is text, not a body
+test.fixme(true, async () => {});
+// @ts-expect-error a fixme registration is not a void call
+void (test.fixme('not yet', async () => {}) satisfies void);
+// @ts-expect-error a group cannot be fixme; mark each test
+test.describe.fixme('later', () => {});
+// each spreads an array row before the fixtures and passes any other row whole; for never spreads. Both register one test per row.
+test.each([{ user: 'Ada' }])('signs in as $user', async ({ user }, { app }) => { user satisfies string; void app; }) satisfies readonly ReturnType<typeof test>[];
+test.each([[1, 'one']])('%i is %s', async (n, word, { platform }) => { n satisfies number; word satisfies string; platform satisfies string; });
+test.each(['a', 'b'])('letter %s', { tags: ['@each'] }, async (letter, { app }) => { letter satisfies string; void app; });
+test.for([[1, 'one']])('%i is %s', async ([n, word], { app }) => { n satisfies number; word satisfies string; void app; });
+test.extend<{ x: number }>().each([1])('x %s', async (row, { x }) => { row satisfies number; x satisfies number; });
+test.extend<{ x: number }>().for([{ id: 'a' }])('x $id', async ({ id }, { x }) => { id satisfies string; x satisfies number; });
+void (test.each([1]) satisfies EachRegistrar<[number, TestFixtures]>);
+test.each([[1, 'one']] as const)('%i is %s', async (n, word, { app }) => { n satisfies 1; word satisfies 'one'; void app; });
+declare const pairs: ReadonlyArray<readonly [number, string]>;
+test.each(pairs)('%i is %s', async (n, word, { app }) => { n satisfies number; word satisfies string; void app; });
+test.for(pairs)('%i is %s', async ([n, word], { app }) => { n satisfies number; word satisfies string; void app; });
+// A table that mixes array and non-array rows is never spread, as at run time.
+declare const mixed: ReadonlyArray<readonly [number, string] | { user: string }>;
+test.each(mixed)('row %#', async (row, { app }) => { row satisfies readonly [number, string] | { user: string }; void app; });
+// An unknown row may be spread or not at run time, so test.for, which never spreads, is the way to take the fixtures.
+declare const loose: unknown[];
+test.for(loose)('row %#', async (row, { app }) => { row satisfies unknown; void app; });
+// @ts-expect-error an unknown row may be spread, so the second argument is not known to be the fixtures
+test.each(loose)('row %#', async (_row, { app }) => { void app; });
+// @ts-expect-error rows are an array
+test.each('ab');
+// @ts-expect-error the registrar registers tests and has no modifiers
+test.each([1]).skip('x %s', async () => {});
+// @ts-expect-error the registrar needs a body
+test.for([1])('no body');
+// @ts-expect-error an array row is spread, so the second argument is its second item, not the fixtures
+test.each([[1, 'one']])('%i', async (_n, { app }) => { void app; });
+// @ts-expect-error test.for passes the row whole, not spread
+test.for([[1, 'one']])('%i', async (n: number) => { void n; });
 // fail takes the same three shapes and returns nothing inside a body; describe and setup take no fail option.
 test.fail(true, 'known gap');
 test.fail('known gap');
+test.setTimeout(60_000);
+// @ts-expect-error the timeout is a number of milliseconds
+test.setTimeout('60s');
 test.fail('gap', async () => {}) satisfies ReturnType<typeof test>;
 void (test.fail(false) satisfies void);
 test('gap', { fail: 'known gap' }, async () => {});
@@ -949,6 +1030,7 @@ report.run.results[0]!.skip?.filter satisfies string | undefined;
 report.run.results[0]!.expectedFailure?.reason satisfies string | undefined;
 report.run.results[0]!.attempts[0]!.expectedFailure?.error?.code satisfies string | undefined;
 report.run.filters?.[0]?.outcome satisfies 'failed' | 'timed-out' | undefined;
+({ cause: 'fixme', reason: 'fixme: crashes on Android' }) satisfies NonNullable<Report['run']['results'][number]['skip']>;
 // @ts-expect-error only a filtered skip names the test filter that left the test out
 ({ cause: 'explicit', reason: 'not on CI', filter: 'jev' }) satisfies NonNullable<Report['run']['results'][number]['skip']>;
 // The change the filters judged is counts only, never a file list: base and files together once git measured it, else why no filter ran.

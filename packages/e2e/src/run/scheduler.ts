@@ -13,13 +13,21 @@ import type { SkipInfo } from '@e2e-dev/core/lib/run/records';
 import type { ResolvedTarget } from '@e2e-dev/core/lib/config/resolve';
 import type { AiTraceSnapshot } from '@e2e-dev/core/lib/internal/ai-trace';
 import type { DebugSnapshot } from '@e2e-dev/core/lib/internal/debug';
-import { classifyError, InfrastructureError, type SerializedError, TestError, TestTimeoutError, serializeError } from '@e2e-dev/core/lib/internal/errors';
+import {
+  classifyError,
+  InfrastructureError,
+  type SerializedError,
+  TestError,
+  TestTimeoutError,
+  serializeError,
+} from '@e2e-dev/core/lib/internal/errors';
 import { timestamp, uuidv7 } from '@e2e-dev/core/lib/internal/ids';
 import { MAX_TIMER_MS } from '@e2e-dev/core/lib/internal/time';
 import type { AttemptRecord, ResultRecord, RunError, SerialGroupRecord } from '@e2e-dev/core/lib/run/records';
 import { retryVerdict } from './retry.ts';
 import { SerialGroupProgress, serialGroupId } from './serial.ts';
-import type { HeldStep } from './step-hold.ts';
+import type { HeldStep, StepHold, StepHoldContext } from './step-hold.ts';
+import { StepAttachmentRelay } from './step-attachment-relay.ts';
 import type { StepProgress } from '@e2e-dev/core/lib/run/steps';
 import type { SpawnUnitRunner, UnitRunner } from './unit-runner.ts';
 import {
@@ -40,6 +48,7 @@ import {
   type AttemptDeadlineMessage,
   type OutputMessage,
   type PairStart,
+  type StepHoldMessage,
   type WirePair,
   type WorkerToMain,
   decodeResult,
@@ -100,13 +109,15 @@ export interface RunUnitsOptions {
   readonly spawn: SpawnUnitRunner;
   readonly events: SchedulerEvents;
   /**
-   * Answers a worker's held step (`e2e run --step`): it resolves to let the
-   * step run. `signal` aborts when the hold ends without an answer: the
-   * worker cancelled it, its attempt ended, it exited, or the run was
-   * interrupted. A rejection otherwise stops the run with its error. While
-   * any step is held, the time limit does not run.
+   * Answers a worker's held step (`e2e run --step`) or pause: it resolves to
+   * let the step run or the test resume. `signal` aborts when the hold ends
+   * without an answer: the worker cancelled it, its attempt ended, it exited,
+   * or the run was interrupted. A rejection otherwise stops the run with its
+   * error, or fails the test at a pause. While any step is held, the time
+   * limit does not run. `readScreen` asks the worker for the screen at that
+   * wait.
    */
-  readonly beforeStep?: ((step: HeldStep, signal: AbortSignal) => Promise<void>) | undefined;
+  readonly beforeStep?: ((step: HeldStep, context: Omit<StepHoldContext, 'show'>) => Promise<void>) | undefined;
   /** App failures buffered during startup, then delivered while target work remains. */
   readonly subscribeTargetFailures?: (receive: (failure: TargetFailure) => void) => () => void;
 }
@@ -368,6 +379,11 @@ class SchedulerWorker {
   }
 }
 
+type SchedulerHold = {
+  readonly worker: SchedulerWorker;
+  readonly controller: AbortController;
+};
+
 class Scheduler {
   private readonly targets = new Map<string, TargetState>();
   /** Every worker that has not exited yet, retired ones included. */
@@ -386,7 +402,12 @@ class Scheduler {
   /** The workers alive when the first one died of an interrupt signal before it was ready; see `excusedSignal`. */
   private signalledWave: Set<SchedulerWorker> | undefined;
   /** Steps waiting for `beforeStep`, by hold id: the worker holding each, and what ends its wait. */
-  private readonly holds = new Map<string, { readonly worker: SchedulerWorker; readonly controller: AbortController }>();
+  private readonly holds = new Map<string, SchedulerHold>();
+
+  private readonly attachments = new StepAttachmentRelay(() => this.interrupting);
+
+  /** Pending `screen-request` calls, keyed by request ID. */
+  private readonly screenReplies = new Map<string, { readonly worker: SchedulerWorker; readonly resolve: (screen: string | undefined) => void }>();
   /** When the time limit is reached, 0 when it is not running; every hold pushes it back by how long it lasted. */
   private timeLimitDue = 0;
   private timeLimitTimer: NodeJS.Timeout | undefined;
@@ -541,33 +562,75 @@ class Scheduler {
   }
 
   /**
-   * Asks `beforeStep` about a worker's held step, and releases it when the
-   * answer is yes. Nothing asks once the run is interrupted: the worker's
-   * interrupt cancels the hold, and a prompt then would be one nobody answers.
+   * Asks `beforeStep` about a worker's held step or pause, and releases it
+   * when the answer is yes. Nothing asks once the run is interrupted: the
+   * worker's interrupt cancels the hold, and a prompt then would be one
+   * nobody answers. A rejection at a pause fails the test there.
    */
-  private hold(worker: SchedulerWorker, holdId: string, step: HeldStep): void {
+  private hold(
+    worker: SchedulerWorker,
+    holdId: string,
+    attemptId: string,
+    step: StepHold,
+    attachmentLabels: StepHoldMessage['attachmentLabels'],
+  ): void {
     if (this.interrupting) return;
+
+    const attachId = this.attachments.hold(worker.runner, holdId, attemptId, attachmentLabels);
     const beforeStep = this.options.beforeStep ?? (() => Promise.resolve());
     const controller = new AbortController();
     if (this.holds.size === 0) this.heldSince = Date.now();
     this.holds.set(holdId, { worker, controller });
     const signal = AbortSignal.any([controller.signal, this.options.interruptSignal]);
+
+    const readScreen = (): Promise<string | undefined> =>
+      new Promise((resolve) => {
+        // The wait has ended or its worker is gone, so no reply can arrive.
+        if (!this.holds.has(holdId) || !worker.runner.alive) {
+          resolve(undefined);
+          return;
+        }
+
+        const requestId = uuidv7();
+        this.screenReplies.set(requestId, { worker, resolve });
+        worker.runner.send({ type: 'screen-request', holdId, requestId });
+      });
+
     // Called inside the chain, so a hook that throws stops the run like one that rejects.
-    Promise.resolve().then(() => beforeStep(step, signal)).then(
+    const held = { ...step, attachId };
+    Promise.resolve()
+      .then(() => beforeStep(held, { signal, readScreen, attach: this.attachments.attach }))
+      .then(
       () => {
         // An answer that came after the hold ended (an interrupt, say) lets nothing run.
-        if (this.endHold(holdId) && !signal.aborted && worker.runner.alive) worker.runner.send({ type: 'step-release', holdId });
+        if (this.endHold(holdId, 'the test resumed') && !signal.aborted && worker.runner.alive) {
+          worker.runner.send({ type: 'step-release', holdId });
+        }
       },
       (cause: unknown) => {
-        const answered = this.endHold(holdId);
-        if (answered && !signal.aborted) this.options.events.onRunAbort({ error: serializeError(classifyError(cause)) });
+        const answered = this.endHold(holdId, 'the test hold failed');
+        if (!answered || signal.aborted) return;
+        const error = serializeError(classifyError(cause));
+        if (step.kind === 'step') this.options.events.onRunAbort({ error });
+        else if (worker.runner.alive) worker.runner.send({ type: 'step-release', holdId, error });
       },
     );
   }
 
-  /** Ends one hold's wait; false when it had ended already. The time limit runs again once no step is held. */
-  private endHold(holdId: string): boolean {
-    if (!this.holds.delete(holdId)) return false;
+  /**
+   * Releases a hold and ends its attachment. Returns false if the hold already ended.
+   * The time limit runs again when the last hold ends.
+   */
+  private endHold(holdId: string, reason: string): boolean {
+    const hold = this.holds.get(holdId);
+
+    if (hold === undefined) {
+      return false;
+    }
+
+    this.holds.delete(holdId);
+    this.attachments.release(holdId, reason);
+
     if (this.holds.size === 0 && this.heldSince !== undefined) {
       const heldMs = Date.now() - this.heldSince;
       this.heldSince = undefined;
@@ -581,11 +644,11 @@ class Scheduler {
   }
 
   /** Ends the waits of one hold, or of every hold a worker has, with no answer: its prompt goes away. */
-  private cancelHolds(match: (holdId: string, worker: SchedulerWorker) => boolean): void {
+  private cancelHolds(reason: string, match: (holdId: string, worker: SchedulerWorker) => boolean): void {
     // Deleting the entry being visited is safe while iterating a Map.
     for (const [holdId, hold] of this.holds) {
       if (!match(holdId, hold.worker)) continue;
-      this.endHold(holdId);
+      this.endHold(holdId, reason);
       hold.controller.abort();
     }
   }
@@ -617,6 +680,7 @@ class Scheduler {
 
   /** Interrupts one worker and reports any unit it has not started. */
   private interruptWorker(worker: SchedulerWorker, skip: SkipInfo | undefined): void {
+    this.cancelHolds('the run was interrupted', (_, holder) => holder === worker);
     worker.runner.send({ type: 'interrupt', ...(skip === undefined ? {} : { skip }) });
     if (worker.state === 'busy') {
       worker.killAfter(this.options.interruptGraceMs);
@@ -892,7 +956,8 @@ class Scheduler {
       }
       case 'attempt-end': {
         worker.unwatch();
-        this.cancelHolds((_, holder) => holder === worker);
+        this.cancelHolds('the test attempt ended', (_, holder) => holder === worker);
+        this.attachments.endAttempt(worker.runner);
         break;
       }
       case 'pong': {
@@ -900,11 +965,20 @@ class Scheduler {
         break;
       }
       case 'step-hold': {
-        this.hold(worker, message.holdId, message.step);
+        this.hold(worker, message.holdId, message.attemptId, message.step, message.attachmentLabels);
         break;
       }
       case 'step-cancel': {
-        this.cancelHolds((holdId) => holdId === message.holdId);
+        this.cancelHolds('the test hold ended', (holdId) => holdId === message.holdId);
+        break;
+      }
+      case 'screen-reply': {
+        this.screenReplies.get(message.requestId)?.resolve(message.screen);
+        this.screenReplies.delete(message.requestId);
+        break;
+      }
+      case 'step-attachment-reply': {
+        this.attachments.reply(worker.runner, message);
         break;
       }
       case 'progress': {
@@ -1013,7 +1087,19 @@ class Scheduler {
   }
 
   private onExit(worker: SchedulerWorker, detail: string, signal: NodeJS.Signals | null, active: WatchedAttempt | undefined): void {
-    this.cancelHolds((_, holder) => holder === worker);
+    const reason = 'the worker exited';
+    this.cancelHolds(reason, (_, holder) => holder === worker);
+    this.attachments.workerExited(worker.runner, reason);
+
+    for (const [requestId, waiting] of this.screenReplies) {
+      if (waiting.worker !== worker) {
+        continue;
+      }
+
+      this.screenReplies.delete(requestId);
+      waiting.resolve(undefined);
+    }
+
     const tracked = this.workers.includes(worker);
     this.forget(worker);
     const state = this.targetState(worker);
